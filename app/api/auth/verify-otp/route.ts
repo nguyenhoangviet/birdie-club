@@ -11,9 +11,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Email and code are required" }, { status: 400 });
   }
 
-  const stored = await redis.get<string>(`otp:${email}`);
+  const stored = await redis.get(`otp:${email}`);
 
-  if (!stored || stored !== code) {
+  if (!stored || String(stored) !== code) {
     return NextResponse.json({ error: "Invalid or expired code" }, { status: 401 });
   }
 
