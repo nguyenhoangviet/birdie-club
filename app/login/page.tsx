@@ -1,10 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -52,7 +50,10 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/calendar");
+    // Hard redirect so the new session cookie is guaranteed to be sent
+    // with the next request (router.push uses a client-side fetch which
+    // can miss a freshly-set cookie in some browser/CDN scenarios).
+    window.location.href = "/calendar";
   }
 
   return (
