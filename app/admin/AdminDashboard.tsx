@@ -375,15 +375,16 @@ function BookingsView({
     const time = `${String(h).padStart(2, "0")}:00 – ${String(h + 1).padStart(2, "0")}:00`;
     const isPending = b.status === "pending";
     const isCancelled = b.status === "cancelled";
+    const isPast = !isCancelled && new Date(`${b.date}T${String(h + 1).padStart(2, "0")}:00:00`) < new Date();
     const cancelOpen = cancelOpenId === b.id;
 
     return (
       <div
         key={b.id}
-        className={`bg-white rounded-xl border px-5 py-4 ${isCancelled ? "opacity-50 border-gray-100" : isPending ? "border-amber-300 shadow-sm" : "border-gray-200"}`}
+        className={`bg-white rounded-xl border px-5 py-4 ${isCancelled || isPast ? "opacity-50 border-gray-100" : isPending ? "border-amber-300 shadow-sm" : "border-gray-200"}`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-          <span className="text-green-700 font-bold text-sm shrink-0 w-32">{time}</span>
+          <span className={`font-bold text-sm shrink-0 w-32 ${isPast ? "text-gray-400" : "text-green-700"}`}>{time}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <p className="font-semibold text-gray-900 text-sm">{b.name}</p>
@@ -406,7 +407,7 @@ function BookingsView({
             <p className="text-gray-400 text-xs truncate">{b.email}</p>
             <p className="text-gray-500 text-xs">{b.phone}</p>
           </div>
-          {!isCancelled && (
+          {!isCancelled && !isPast && (
             <div className="flex items-center gap-2 shrink-0">
               {isPending && (
                 <button
@@ -427,7 +428,7 @@ function BookingsView({
           )}
         </div>
 
-        {cancelOpen && (
+        {cancelOpen && !isPast && (
           <div className="mt-3 flex gap-2 items-center">
             <input
               type="text"
