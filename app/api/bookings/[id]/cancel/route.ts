@@ -22,7 +22,7 @@ export async function POST(
     status: string;
   }>(`booking:${id}`);
 
-  if (!booking || booking.status !== "confirmed" || booking.email !== session.email) {
+  if (!booking || !['confirmed', 'pending'].includes(booking.status) || booking.email !== session.email) {
     return NextResponse.json({ error: "Booking not found" }, { status: 404 });
   }
 

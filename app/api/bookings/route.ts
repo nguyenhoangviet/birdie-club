@@ -53,11 +53,11 @@ export async function POST(req: NextRequest) {
   const createdAt = new Date().toISOString();
   const email = session.email;
 
-  await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "confirmed", createdAt, name: nameStr, phone: phoneStr });
+  await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "pending", createdAt, name: nameStr, phone: phoneStr });
   await redis.zadd(`userBookings:${email}`, { score: Date.now(), member: id });
 
   return NextResponse.json(
-    { booking: { id, email, date, hour: hourNum, status: "confirmed", createdAt, name: nameStr, phone: phoneStr } },
+    { booking: { id, email, date, hour: hourNum, status: "pending", createdAt, name: nameStr, phone: phoneStr } },
     { status: 201 }
   );
 }

@@ -313,15 +313,56 @@ function BookingsView({
   bookings: Booking[] | null;
   loading: boolean;
 }) {
-  if (loading) {
-    return (
-      <div className="text-center py-16 text-gray-400">Loading bookings…</div>
-    );
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [cancelOpenId, setCancelOpenId] = useState<string | null>(null);
+  const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({});
+  const [localBookings, setLocalBookings] = useState<Booking[] | null>(bookings);
+
+  // Sync when prop changes (initial load)
+  if (bookings !== null && localBookings === null) {
+    setLocalBookings(bookings);
   }
 
-  if (!bookings) return null;
+  async function handleConfirm(id: string) {
+    setConfirming(id);
+    const res = await fetch(`/api/admin/bookings/${id}/confirm`, { method: "POST" });
+    setConfirming(null);
+    if (res.ok) {
+      setLocalBookings((prev) =>
+        prev ? prev.map((b) => (b.id === id ? { ...b, status: "confirmed" } : b)) : prev
+      );
+    }
+  }
 
-  if (bookings.length === 0) {
+  async function handleCancel(id: string) {
+    const reason = cancelReasons[id] ?? "";
+    setCancelling(id);
+    const res = await fetch(`/api/admin/bookings/${id}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    setCancelling(null);
+    if (res.ok) {
+      setCancelOpenId(null);
+      setLocalBookings((prev) =>
+        prev ? prev.map((b) => (b.id === id ? { ...b, status: "cancelled" } : b)) : prev
+      );
+    }
+  }
+
+  if (loading) {
+    return <div className="text-center py-16 text-gray-400">Loading bookings…</div>;
+  }
+
+  if (!localBookings) return null;
+
+  const active = localBookings.filter((b) => b.status !== "cancelled");
+  const cancelled = localBookings.filter((b) => b.status === "cancelled");
+  const pending = active.filter((b) => b.status === "pending");
+
+  if (localBookings.length === 0) {
     return (
       <div className="text-center py-16 bg-white rounded-2xl border border-gray-200 text-gray-400">
         No bookings yet.
@@ -329,53 +370,133 @@ function BookingsView({
     );
   }
 
-  // Group by date
+  function renderBooking(b: Booking) {
+    const h = Number(b.hour);
+    const time = `${String(h).padStart(2, "0")}:00 – ${String(h + 1).padStart(2, "0")}:00`;
+    const isPending = b.status === "pending";
+    const isCancelled = b.status === "cancelled";
+    const cancelOpen = cancelOpenId === b.id;
+
+    return (
+      <div
+        key={b.id}
+        className={`bg-white rounded-xl border px-5 py-4 ${isCancelled ? "opacity-50 border-gray-100" : isPending ? "border-amber-300 shadow-sm" : "border-gray-200"}`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <span className="text-green-700 font-bold text-sm shrink-0 w-32">{time}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-gray-900 text-sm">{b.name}</p>
+              {isPending && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                  ⏳ Pending
+                </span>
+              )}
+              {b.status === "confirmed" && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                  ✓ Confirmed
+                </span>
+              )}
+              {isCancelled && (
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-500">
+                  ✕ Cancelled
+                </span>
+              )}
+            </div>
+            <p className="text-gray-400 text-xs truncate">{b.email}</p>
+            <p className="text-gray-500 text-xs">{b.phone}</p>
+          </div>
+          {!isCancelled && (
+            <div className="flex items-center gap-2 shrink-0">
+              {isPending && (
+                <button
+                  onClick={() => handleConfirm(b.id)}
+                  disabled={confirming === b.id}
+                  className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {confirming === b.id ? "Confirming…" : "✓ Confirm"}
+                </button>
+              )}
+              <button
+                onClick={() => setCancelOpenId(cancelOpen ? null : b.id)}
+                className="text-xs font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {cancelOpen && (
+          <div className="mt-3 flex gap-2 items-center">
+            <input
+              type="text"
+              value={cancelReasons[b.id] ?? ""}
+              onChange={(e) =>
+                setCancelReasons((prev) => ({ ...prev, [b.id]: e.target.value }))
+              }
+              placeholder="Reason for cancellation (optional)"
+              className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+            />
+            <button
+              onClick={() => handleCancel(b.id)}
+              disabled={cancelling === b.id}
+              className="text-xs font-semibold bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50 shrink-0"
+            >
+              {cancelling === b.id ? "Cancelling…" : "Confirm Cancel"}
+            </button>
+            <button
+              onClick={() => setCancelOpenId(null)}
+              className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Group active bookings by date
   const grouped: Record<string, Booking[]> = {};
-  for (const b of bookings) {
+  for (const b of active) {
     if (!grouped[b.date]) grouped[b.date] = [];
     grouped[b.date].push(b);
   }
-
   const sortedDates = Object.keys(grouped).sort();
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-500">
-        {bookings.length} booking{bookings.length !== 1 ? "s" : ""} total
-      </p>
+      <div className="flex gap-3 text-sm text-gray-500 flex-wrap">
+        <span>{localBookings.length} total</span>
+        {pending.length > 0 && (
+          <span className="text-amber-600 font-medium">· {pending.length} awaiting confirmation</span>
+        )}
+      </div>
+
       {sortedDates.map((date) => (
         <div key={date}>
           <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
             {new Date(date + "T00:00:00").toLocaleDateString("en-GB", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
+              weekday: "long", day: "numeric", month: "long", year: "numeric",
             })}
           </h3>
           <div className="space-y-2">
-            {grouped[date].map((b) => {
-              const h = Number(b.hour);
-              const time = `${String(h).padStart(2, "0")}:00`;
-              return (
-                <div
-                  key={b.id}
-                  className="bg-white rounded-xl border border-gray-200 px-5 py-3 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-6"
-                >
-                  <span className="text-green-700 font-bold text-sm w-16 shrink-0">
-                    {time}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 text-sm">{b.name}</p>
-                    <p className="text-gray-400 text-xs truncate">{b.email}</p>
-                  </div>
-                  <p className="text-gray-500 text-sm">{b.phone}</p>
-                </div>
-              );
-            })}
+            {grouped[date]
+              .sort((a, b) => Number(a.hour) - Number(b.hour))
+              .map(renderBooking)}
           </div>
         </div>
       ))}
+
+      {cancelled.length > 0 && (
+        <details className="mt-4">
+          <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-600">
+            Show {cancelled.length} cancelled booking{cancelled.length !== 1 ? "s" : ""}
+          </summary>
+          <div className="space-y-2 mt-2">{cancelled.map(renderBooking)}</div>
+        </details>
+      )}
     </div>
   );
 }

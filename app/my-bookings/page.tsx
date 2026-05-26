@@ -34,6 +34,17 @@ export default async function MyBookingsPage() {
     bookings = results.filter((b): b is Booking => b !== null);
   }
 
+  const pending = bookings
+    .filter((b) => b.status === "pending" && !isPastSlot(b.date, Number(b.hour)))
+    .map((b) => ({
+      id: b.id,
+      date: b.date,
+      hour: Number(b.hour),
+      slotLabel: formatSlotRange(Number(b.hour)),
+      canCancel: true,
+      status: "pending" as const,
+    }));
+
   const upcoming = bookings
     .filter((b) => b.status === "confirmed" && !isPastSlot(b.date, Number(b.hour)))
     .map((b) => ({
@@ -42,6 +53,7 @@ export default async function MyBookingsPage() {
       hour: Number(b.hour),
       slotLabel: formatSlotRange(Number(b.hour)),
       canCancel: !isWithin24Hours(b.date, Number(b.hour)),
+      status: "confirmed" as const,
     }));
 
   const past = bookings
@@ -53,6 +65,7 @@ export default async function MyBookingsPage() {
       hour: Number(b.hour),
       slotLabel: formatSlotRange(Number(b.hour)),
       canCancel: false,
+      status: "confirmed" as const,
     }));
 
   return (
@@ -60,7 +73,7 @@ export default async function MyBookingsPage() {
       <NavBar email={email} />
       <main className="max-w-3xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold text-gray-900 mb-6">My Bookings</h1>
-        <BookingList upcoming={upcoming} past={past} />
+        <BookingList upcoming={upcoming} past={past} pending={pending} />
       </main>
     </div>
   );

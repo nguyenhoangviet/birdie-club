@@ -14,6 +14,65 @@ const HTML_TEMPLATE = (otp: string) => `
   </div>
 `;
 
+function formatBookingDateTime(date: string, hour: number) {
+  const d = new Date(date + "T12:00:00");
+  const dateStr = d.toLocaleDateString("en-GB", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+  const start = `${String(hour).padStart(2, "0")}:00`;
+  const end = `${String(hour + 1).padStart(2, "0")}:00`;
+  return { dateStr, timeStr: `${start} – ${end}` };
+}
+
+async function sendEmail(to: string, subject: string, html: string) {
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailUser || !gmailPass) {
+    console.log(`\n[EMAIL] To: ${to}\n[EMAIL] Subject: ${subject}\n[EMAIL] (no SMTP configured)\n`);
+    return;
+  }
+  const transporter = nodemailer.createTransport({
+    host: "smtp.gmail.com", port: 465, secure: true,
+    auth: { user: gmailUser, pass: gmailPass },
+  });
+  await transporter.sendMail({ from: `"The Birdie Club" <${gmailUser}>`, to, subject, html });
+}
+
+export async function sendBookingConfirmedEmail(email: string, name: string, date: string, hour: number) {
+  const { dateStr, timeStr } = formatBookingDateTime(date, hour);
+  await sendEmail(
+    email,
+    "✅ Your Birdie Club session is confirmed!",
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h1 style="color:#16a34a;font-size:22px;margin-bottom:4px;">🏸 The Birdie Club</h1>
+      <p style="color:#6b7280;margin-bottom:20px;">Hi ${name}, your session has been confirmed.</p>
+      <div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 4px 0;font-size:15px;font-weight:700;color:#15803d;">📅 ${dateStr}</p>
+        <p style="margin:0;font-size:14px;color:#166534;">🕐 ${timeStr}</p>
+      </div>
+      <p style="color:#6b7280;font-size:14px;">See you on the court! If you need to cancel, please do so at least 24 hours before your session.</p>
+    </div>`
+  );
+}
+
+export async function sendBookingCancelledEmail(email: string, name: string, date: string, hour: number, reason: string) {
+  const { dateStr, timeStr } = formatBookingDateTime(date, hour);
+  await sendEmail(
+    email,
+    "❌ Your Birdie Club session has been cancelled",
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h1 style="color:#16a34a;font-size:22px;margin-bottom:4px;">🏸 The Birdie Club</h1>
+      <p style="color:#6b7280;margin-bottom:20px;">Hi ${name}, unfortunately your session has been cancelled.</p>
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 4px 0;font-size:15px;font-weight:700;color:#b91c1c;">📅 ${dateStr}</p>
+        <p style="margin:0;font-size:14px;color:#991b1b;">🕐 ${timeStr}</p>
+      </div>
+      ${reason ? `<p style="color:#374151;font-size:14px;margin-bottom:8px;"><strong>Reason:</strong> ${reason}</p>` : ""}
+      <p style="color:#6b7280;font-size:14px;">Feel free to book another slot via our website. Sorry for the inconvenience.</p>
+    </div>`
+  );
+}
+
 export async function sendOtpEmail(email: string, otp: string) {
   const gmailUser = process.env.GMAIL_USER;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
