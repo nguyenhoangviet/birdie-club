@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getIronSession } from "iron-session";
 import type { SessionData } from "@/lib/session";
-import { isAdminEmail } from "@/lib/admin";
 
 const PUBLIC_PATHS = [
+  "/",
   "/login",
+  "/events",
+  "/activities",
+  "/admin",
   "/api/auth/send-otp",
   "/api/auth/verify-otp",
+  "/api/admin",
 ];
 
 export async function middleware(req: NextRequest) {
@@ -27,16 +31,6 @@ export async function middleware(req: NextRequest) {
 
   if (!session.isLoggedIn || !session.email) {
     return NextResponse.redirect(new URL("/login", req.url));
-  }
-
-  // Protect admin routes
-  const isAdminRoute =
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/") ||
-    pathname.startsWith("/api/admin/");
-
-  if (isAdminRoute && !isAdminEmail(session.email)) {
-    return NextResponse.redirect(new URL("/calendar", req.url));
   }
 
   return res;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { getSession } from "@/lib/session";
-import { SLOT_HOURS, isPastSlot } from "@/lib/slots";
+import { SLOT_HOURS, isPastSlot, LUNCH_HOURS } from "@/lib/slots";
 import { randomUUID } from "crypto";
 
 export async function POST(req: NextRequest) {
@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  const { date, hour } = body ?? {};
+  const { date, hour, name, phone } = body ?? {};
 
   if (!date || hour === undefined || hour === null) {
     return NextResponse.json({ error: "Date and hour are required" }, { status: 400 });
@@ -30,6 +30,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Cannot book a past slot" }, { status: 400 });
   }
 
+  if (LUNCH_HOURS.includes(hourNum)) {
+    return NextResponse.json({ error: "This slot is unavailable (lunch break)" }, { status: 400 });
+  }
+
+  const nameStr = (name ?? "").trim();
+  const phoneStr = (phone ?? "").trim();
+  if (!nameStr || !phoneStr) {
+    return NextResponse.json({ error: "Name and phone number are required" }, { status: 400 });
+  }
+
   const slotKey = `slot:${date}:${hourNum}`;
 
   // Atomic check: only set if slot is empty (NX = only set if Not eXists)
@@ -43,12 +53,11 @@ export async function POST(req: NextRequest) {
   const createdAt = new Date().toISOString();
   const email = session.email;
 
-  await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "confirmed", createdAt });
+  await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "confirmed", createdAt, name: nameStr, phone: phoneStr });
   await redis.zadd(`userBookings:${email}`, { score: Date.now(), member: id });
-  await redis.zadd("allBookings", { score: Date.now(), member: id });
 
   return NextResponse.json(
-    { booking: { id, email, date, hour: hourNum, status: "confirmed", createdAt } },
+    { booking: { id, email, date, hour: hourNum, status: "confirmed", createdAt, name: nameStr, phone: phoneStr } },
     { status: 201 }
   );
 }

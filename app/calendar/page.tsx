@@ -10,7 +10,7 @@ export default async function CalendarPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <NavBar email={session.email} />
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Book a Session</h1>
           <p className="text-gray-500 text-sm mt-1">

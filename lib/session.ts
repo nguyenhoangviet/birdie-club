@@ -24,3 +24,26 @@ export async function getSession() {
   );
   return session;
 }
+
+export interface AdminSessionData {
+  isAdmin: boolean;
+}
+
+const adminSessionOptions: SessionOptions = {
+  password: process.env.SESSION_SECRET as string,
+  cookieName: "birdie-admin-session",
+  cookieOptions: {
+    secure: process.env.NODE_ENV === "production",
+    httpOnly: true,
+    sameSite: "lax",
+    maxAge: 60 * 60 * 8, // 8 hours
+  },
+};
+
+export async function getAdminSession() {
+  const session = await getIronSession<AdminSessionData>(
+    await cookies(),
+    adminSessionOptions
+  );
+  return session;
+}

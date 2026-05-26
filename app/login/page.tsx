@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [step, setStep] = useState<"email" | "otp">("email");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
@@ -50,7 +52,7 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = "/calendar";
+    router.push("/calendar");
   }
 
   return (

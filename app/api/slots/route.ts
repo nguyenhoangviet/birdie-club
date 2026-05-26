@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
 import { getSession } from "@/lib/session";
-import { SLOT_HOURS, isPastSlot } from "@/lib/slots";
+import { SLOT_HOURS, isPastSlot, LUNCH_HOURS } from "@/lib/slots";
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -57,11 +57,13 @@ export async function GET(req: NextRequest) {
 
   const slots = pairs.map(({ date, hour }, idx) => {
     const bookingId = bookingIds[idx];
-    let status: "available" | "mine" | "booked" | "past";
+    let status: "available" | "mine" | "booked" | "past" | "lunch";
     let outBookingId: string | undefined;
 
     if (isPastSlot(date, hour)) {
       status = "past";
+    } else if (LUNCH_HOURS.includes(hour)) {
+      status = "lunch";
     } else if (bookingId && bookingMap[bookingId]) {
       const b = bookingMap[bookingId];
       if (b.email === session.email) {

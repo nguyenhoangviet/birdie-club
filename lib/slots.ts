@@ -1,6 +1,9 @@
 // Slots run 8 AM – 8 PM: hours 8 through 19 (each slot is 1 hour)
 export const SLOT_HOURS: number[] = Array.from({ length: 12 }, (_, i) => i + 8);
 
+// Hours blocked as lunch break (12 PM and 1 PM)
+export const LUNCH_HOURS: number[] = [12, 13];
+
 export function formatHour(hour: number): string {
   if (hour === 12) return "12:00 PM";
   if (hour < 12) return `${hour}:00 AM`;

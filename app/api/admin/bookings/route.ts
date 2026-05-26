@@ -1,45 +1,37 @@
 import { NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
-import { getSession } from "@/lib/session";
-import { isAdminEmail } from "@/lib/admin";
-import { isPastSlot } from "@/lib/slots";
+import { getAdminSession } from "@/lib/session";
 
 export async function GET() {
-  const session = await getSession();
-  if (!session.isLoggedIn || !isAdminEmail(session.email)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const session = await getAdminSession();
+  if (!session.isAdmin) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Fetch all booking IDs, newest first
-  const ids = await redis.zrange<string[]>("allBookings", 0, -1, { rev: true });
+  // Scan all booking:* keys
+  let cursor = 0;
+  const allKeys: string[] = [];
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, {
+      match: "booking:*",
+      count: 100,
+    });
+    cursor = Number(nextCursor);
+    allKeys.push(...(keys as string[]));
+  } while (cursor !== 0);
 
-  if (ids.length === 0) {
-    return NextResponse.json({ bookings: [] });
-  }
-
-  type Booking = {
-    id: string;
-    email: string;
-    date: string;
-    hour: string;
-    status: string;
-    createdAt: string;
-  };
-
-  const pipeline = redis.pipeline();
-  for (const id of ids) {
-    pipeline.hgetall(`booking:${id}`);
-  }
-  const results = await pipeline.exec<(Booking | null)[]>();
-
-  const bookings = results
-    .filter((b): b is Booking => b !== null)
-    .filter(
-      (b) =>
-        b.status === "pending" ||
-        (b.status === "confirmed" && !isPastSlot(b.date, Number(b.hour)))
+  const bookings = (
+    await Promise.all(
+      allKeys.map((key) => redis.hgetall<Record<string, string>>(key))
     )
-    .map((b) => ({ ...b, hour: Number(b.hour) }));
+  ).filter(Boolean) as Array<Record<string, string>>;
+
+  // Sort by date asc, then hour asc
+  bookings.sort((a, b) => {
+    const dc = (a.date ?? "").localeCompare(b.date ?? "");
+    if (dc !== 0) return dc;
+    return Number(a.hour ?? 0) - Number(b.hour ?? 0);
+  });
 
   return NextResponse.json({ bookings });
 }
