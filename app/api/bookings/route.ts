@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
 
   await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "confirmed", createdAt });
   await redis.zadd(`userBookings:${email}`, { score: Date.now(), member: id });
+  await redis.zadd("allBookings", { score: Date.now(), member: id });
 
   return NextResponse.json(
     { booking: { id, email, date, hour: hourNum, status: "confirmed", createdAt } },
