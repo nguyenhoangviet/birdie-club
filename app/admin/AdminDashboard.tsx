@@ -69,6 +69,7 @@ export default function AdminDashboard({
   const [evLoading, setEvLoading] = useState(false);
   const [evError, setEvError] = useState("");
   const [evSuccess, setEvSuccess] = useState("");
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -102,11 +103,64 @@ export default function AdminDashboard({
     setActivities((prev) => prev.filter((a) => a.id !== id));
   }
 
+  function handleStartEdit(ev: ClubEvent) {
+    setEditingEventId(ev.id);
+    setEvTitle(ev.title);
+    setEvDate(ev.date);
+    setEvTime(ev.time ?? "");
+    setEvLocation(ev.location ?? "");
+    setEvDesc(ev.description ?? "");
+    setEvFlickrUrl(ev.flickrUrl ?? "");
+    setEvError("");
+    setEvSuccess("");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function handleCancelEdit() {
+    setEditingEventId(null);
+    setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+    setEvError(""); setEvSuccess("");
+  }
+
   async function handleAddEvent(e: React.FormEvent) {
     e.preventDefault();
     setEvLoading(true);
     setEvError("");
     setEvSuccess("");
+
+    if (editingEventId) {
+      // --- EDIT existing event ---
+      const existing = events.find((ev) => ev.id === editingEventId);
+      const res = await fetch(`/api/admin/events/${editingEventId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: evTitle, date: evDate, time: evTime,
+          location: evLocation, description: evDesc, flickrUrl: evFlickrUrl,
+          existingImageUrl: existing?.imageUrl ?? "",
+        }),
+      });
+      setEvLoading(false);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setEvError(data.error ?? "Failed to save");
+        return;
+      }
+      const updated: ClubEvent = {
+        ...existing!,
+        title: evTitle, date: evDate, time: evTime,
+        location: evLocation, description: evDesc, flickrUrl: evFlickrUrl,
+        imageUrl: evFlickrUrl ? existing?.imageUrl : existing?.imageUrl,
+      };
+      setEvents((prev) => prev.map((ev) => ev.id === editingEventId ? updated : ev));
+      setEvSuccess("Event updated!");
+      setEditingEventId(null);
+      setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+      router.refresh();
+      return;
+    }
+
+    // --- ADD new event ---
     const res = await fetch("/api/admin/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -163,7 +217,9 @@ export default function AdminDashboard({
         {tab === "events" && (
           <>
             <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-5">Add New Event</h2>
+              <h2 className="text-lg font-bold text-gray-900 mb-5">
+                {editingEventId ? "Edit Event" : "Add New Event"}
+              </h2>
               <form onSubmit={handleAddEvent} className="space-y-4">
                 <div className="grid sm:grid-cols-2 gap-4">
                   <div className="sm:col-span-2">
@@ -205,10 +261,18 @@ export default function AdminDashboard({
                 </div>
                 {evError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{evError}</p>}
                 {evSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{evSuccess}</p>}
-                <button type="submit" disabled={evLoading}
-                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
-                  {evLoading ? "Adding…" : "Add Event"}
-                </button>
+                <div className="flex items-center gap-3">
+                  <button type="submit" disabled={evLoading}
+                    className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                    {evLoading ? "Saving…" : editingEventId ? "Save Changes" : "Add Event"}
+                  </button>
+                  {editingEventId && (
+                    <button type="button" onClick={handleCancelEdit}
+                      className="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                      Cancel
+                    </button>
+                  )}
+                </div>
               </form>
             </div>
 
@@ -229,6 +293,7 @@ export default function AdminDashboard({
                       {ev.description && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{ev.description}</p>}
                     </div>
                     <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium flex-shrink-0">Delete</button>
+                    <button onClick={() => handleStartEdit(ev)} className="text-xs text-blue-500 hover:text-blue-700 font-medium flex-shrink-0">Edit</button>
                   </div>
                 ))}
               </div>
