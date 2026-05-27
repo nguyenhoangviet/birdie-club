@@ -1,6 +1,7 @@
 import { redis } from "@/lib/redis";
 import { getSession } from "@/lib/session";
 import { NavBar } from "@/components/NavBar";
+import { ActivitiesGallery } from "@/components/ActivitiesGallery";
 
 interface Activity {
   id: string;
@@ -39,44 +40,7 @@ export default async function ActivitiesPage() {
             <p className="text-gray-400">No activities yet. Check back soon!</p>
           </div>
         ) : (
-          <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {activities.map((a) => (
-              <div
-                key={a.id}
-                className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow"
-              >
-                {a.imageUrl ? (
-                  <img
-                    src={a.imageUrl}
-                    alt={a.title}
-                    className="w-full h-52 object-cover"
-                  />
-                ) : (
-                  <div className="h-52 bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center">
-                    <span className="text-white text-5xl">🏸</span>
-                  </div>
-                )}
-                <div className="p-5">
-                  <h2 className="font-bold text-gray-900 leading-snug">{a.title}</h2>
-                  {a.description && (
-                    <p className="text-gray-500 text-sm mt-2 leading-relaxed">
-                      {a.description}
-                    </p>
-                  )}
-                  {a.flickrUrl && (
-                    <a
-                      href={a.flickrUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block text-green-600 text-sm mt-3 hover:underline font-medium"
-                    >
-                      View on Flickr →
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+          <ActivitiesGallery activities={activities} />
         )}
       </main>
     </div>
