@@ -54,19 +54,19 @@ export function ActivitiesGallery({ activities }: { activities: Activity[] }) {
 
   return (
     <>
-      <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-6">
+      <div className="columns-2 md:columns-3 gap-4">
         {activities.map((a, i) => (
           <div
             key={a.id}
             onClick={() => setLightboxIndex(i)}
-            className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
+            className="break-inside-avoid mb-4 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
           >
             {a.imageUrl ? (
               <div className="relative overflow-hidden">
                 <img
                   src={a.imageUrl}
                   alt={a.title}
-                  className="w-full h-52 object-cover group-hover:scale-105 transition-transform duration-300"
+                  className="w-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
                   <svg
@@ -85,14 +85,14 @@ export function ActivitiesGallery({ activities }: { activities: Activity[] }) {
                 </div>
               </div>
             ) : (
-              <div className="h-52 bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center">
+              <div className="aspect-[4/3] bg-gradient-to-br from-green-400 to-teal-500 flex items-center justify-center">
                 <span className="text-white text-5xl">🏸</span>
               </div>
             )}
-            <div className="p-5">
-              <h2 className="font-bold text-gray-900 leading-snug">{a.title}</h2>
+            <div className="p-4">
+              <h2 className="font-bold text-gray-900 text-sm leading-snug">{a.title}</h2>
               {a.description && (
-                <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+                <p className="text-gray-500 text-xs mt-1 leading-relaxed">
                   {a.description}
                 </p>
               )}
