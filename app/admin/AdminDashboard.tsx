@@ -20,6 +20,8 @@ interface ClubEvent {
   time?: string;
   location?: string;
   description?: string;
+  imageUrl?: string;
+  flickrUrl?: string;
 }
 
 type Tab = "bookings" | "events" | "activities";
@@ -63,6 +65,7 @@ export default function AdminDashboard({
   const [evTime, setEvTime] = useState("");
   const [evLocation, setEvLocation] = useState("");
   const [evDesc, setEvDesc] = useState("");
+  const [evFlickrUrl, setEvFlickrUrl] = useState("");
   const [evLoading, setEvLoading] = useState(false);
   const [evError, setEvError] = useState("");
   const [evSuccess, setEvSuccess] = useState("");
@@ -107,7 +110,7 @@ export default function AdminDashboard({
     const res = await fetch("/api/admin/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: evTitle, date: evDate, time: evTime, location: evLocation, description: evDesc }),
+      body: JSON.stringify({ title: evTitle, date: evDate, time: evTime, location: evLocation, description: evDesc, flickrUrl: evFlickrUrl }),
     });
     setEvLoading(false);
     if (!res.ok) {
@@ -115,7 +118,7 @@ export default function AdminDashboard({
       setEvError(data.error ?? "Failed to add");
       return;
     }
-    setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc("");
+    setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
     setEvSuccess("Event added!");
     router.refresh();
   }
@@ -191,6 +194,13 @@ export default function AdminDashboard({
                     <textarea value={evDesc} onChange={e => setEvDesc(e.target.value)}
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                       rows={3} placeholder="What's this event about?" />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Photo (Flickr URL)</label>
+                    <input type="url" value={evFlickrUrl} onChange={e => setEvFlickrUrl(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="https://www.flickr.com/photos/user/12345678/" />
+                    <p className="text-xs text-gray-400 mt-1">Paste a Flickr photo page URL — image is fetched automatically.</p>
                   </div>
                 </div>
                 {evError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{evError}</p>}
