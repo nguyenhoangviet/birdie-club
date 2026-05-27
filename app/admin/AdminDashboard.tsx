@@ -24,14 +24,26 @@ interface ClubEvent {
   flickrUrl?: string;
 }
 
-type Tab = "bookings" | "events" | "activities";
+interface SlideConfig {
+  title: string;
+  sub: string;
+  imageUrl?: string;
+  flickrUrl?: string;
+  gradient: string;
+}
+
+type Tab = "bookings" | "events" | "activities" | "slider";
 
 export default function AdminDashboard({
   initialActivities,
   initialEvents,
+  initialSlides,
+  initialFeaturedEventId,
 }: {
   initialActivities: Activity[];
   initialEvents: ClubEvent[];
+  initialSlides: SlideConfig[];
+  initialFeaturedEventId: string;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("events");
@@ -70,6 +82,20 @@ export default function AdminDashboard({
   const [evError, setEvError] = useState("");
   const [evSuccess, setEvSuccess] = useState("");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+
+  // Featured event (slider pin)
+  const [featuredEventId, setFeaturedEventId] = useState<string>(initialFeaturedEventId);
+  const [pinLoading, setPinLoading] = useState<string | null>(null);
+
+  // Slider state
+  const [slides, setSlides] = useState<SlideConfig[]>(initialSlides);
+  const [slideEditing, setSlideEditing] = useState<number | null>(null);
+  const [slideTitle, setSlideTitle] = useState("");
+  const [slideSub, setSlideSub] = useState("");
+  const [slideFlickrUrl, setSlideFlickrUrl] = useState("");
+  const [slideLoading, setSlideLoading] = useState(false);
+  const [slideError, setSlideError] = useState("");
+  const [slideSuccess, setSlideSuccess] = useState("");
 
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -120,6 +146,70 @@ export default function AdminDashboard({
     setEditingEventId(null);
     setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
     setEvError(""); setEvSuccess("");
+  }
+
+  async function handlePinEvent(id: string) {
+    setPinLoading(id);
+    await fetch("/api/admin/slider/featured", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: id }),
+    });
+    setFeaturedEventId(id);
+    setPinLoading(null);
+  }
+
+  async function handleUnpinEvent() {
+    setPinLoading("unpin");
+    await fetch("/api/admin/slider/featured", { method: "DELETE" });
+    setFeaturedEventId("");
+    setPinLoading(null);
+  }
+
+  function handleStartEditSlide(index: number) {
+    const s = slides[index];
+    setSlideEditing(index);
+    setSlideTitle(s.title);
+    setSlideSub(s.sub);
+    setSlideFlickrUrl(s.flickrUrl ?? "");
+    setSlideError("");
+    setSlideSuccess("");
+  }
+
+  async function handleSaveSlide(e: React.FormEvent) {
+    e.preventDefault();
+    if (slideEditing === null) return;
+    setSlideLoading(true);
+    setSlideError("");
+    setSlideSuccess("");
+    const res = await fetch("/api/admin/slider", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        index: slideEditing,
+        title: slideTitle,
+        sub: slideSub,
+        flickrUrl: slideFlickrUrl,
+        existingImageUrl: slides[slideEditing]?.imageUrl ?? "",
+        gradient: slides[slideEditing]?.gradient,
+      }),
+    });
+    setSlideLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setSlideError(data.error ?? "Failed to save");
+      return;
+    }
+    const data = await res.json();
+    setSlides((prev) =>
+      prev.map((s, i) =>
+        i === slideEditing
+          ? { ...s, title: slideTitle, sub: slideSub, flickrUrl: slideFlickrUrl, imageUrl: data.imageUrl ?? s.imageUrl }
+          : s
+      )
+    );
+    setSlideSuccess("Slide saved!");
+    setSlideEditing(null);
   }
 
   async function handleAddEvent(e: React.FormEvent) {
@@ -208,6 +298,7 @@ export default function AdminDashboard({
           <button className={tabClass("bookings")} onClick={() => { setTab("bookings"); loadBookings(); }}>📋 Bookings</button>
           <button className={tabClass("events")} onClick={() => setTab("events")}>📅 Events</button>
           <button className={tabClass("activities")} onClick={() => setTab("activities")}>📸 Club Photos</button>
+          <button className={tabClass("slider")} onClick={() => setTab("slider")}>🖼️ Slider</button>
         </div>
 
         {tab === "bookings" && (
@@ -294,6 +385,23 @@ export default function AdminDashboard({
                     </div>
                     <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium flex-shrink-0">Delete</button>
                     <button onClick={() => handleStartEdit(ev)} className="text-xs text-blue-500 hover:text-blue-700 font-medium flex-shrink-0">Edit</button>
+                    {featuredEventId === ev.id ? (
+                      <button
+                        onClick={handleUnpinEvent}
+                        disabled={pinLoading === "unpin"}
+                        className="text-xs text-amber-500 hover:text-amber-700 font-medium flex-shrink-0 disabled:opacity-50"
+                      >
+                        {pinLoading === "unpin" ? "…" : "📌 Unpin"}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handlePinEvent(ev.id)}
+                        disabled={pinLoading === ev.id}
+                        className="text-xs text-gray-400 hover:text-green-600 font-medium flex-shrink-0 disabled:opacity-50"
+                      >
+                        {pinLoading === ev.id ? "…" : "📌 Pin"}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -362,6 +470,100 @@ export default function AdminDashboard({
                 ))}
               </div>
             )}
+          </>
+        )}
+
+        {tab === "slider" && (
+          <>
+            <div className="mb-6">
+              <h2 className="text-lg font-bold text-gray-900">Home Page Slider</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Edit the 3 base slides shown on the home page. Pin an event (from the Events tab) to add it as the first slide.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {slides.map((slide, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="flex items-start gap-4 p-5">
+                    {/* Thumbnail */}
+                    <div className={`flex-shrink-0 w-24 h-16 rounded-xl overflow-hidden bg-gradient-to-br ${slide.gradient} flex items-center justify-center`}>
+                      {slide.imageUrl ? (
+                        <img src={slide.imageUrl} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span className="text-white text-2xl">🏸</span>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm">Slide {i + 1}</p>
+                      <p className="text-gray-700 text-sm">{slide.title}</p>
+                      <p className="text-gray-400 text-xs mt-0.5">{slide.sub}</p>
+                    </div>
+                    <button
+                      onClick={() => handleStartEditSlide(i)}
+                      className="text-xs text-blue-500 hover:text-blue-700 font-medium flex-shrink-0"
+                    >
+                      Edit
+                    </button>
+                  </div>
+
+                  {slideEditing === i && (
+                    <form onSubmit={handleSaveSlide} className="border-t border-gray-100 p-5 space-y-4 bg-gray-50">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                        <input type="text" value={slideTitle} onChange={e => setSlideTitle(e.target.value)}
+                          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          placeholder="Slide title" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Subtitle</label>
+                        <input type="text" value={slideSub} onChange={e => setSlideSub(e.target.value)}
+                          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          placeholder="Short subtitle text" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Photo (Flickr URL)</label>
+                        <input type="url" value={slideFlickrUrl} onChange={e => setSlideFlickrUrl(e.target.value)}
+                          className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                          placeholder="https://www.flickr.com/photos/user/12345678/" />
+                        <p className="text-xs text-gray-400 mt-1">Leave blank to keep existing image. Fetches 1024px version for best quality.</p>
+                      </div>
+                      {slideError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{slideError}</p>}
+                      {slideSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{slideSuccess}</p>}
+                      <div className="flex items-center gap-3">
+                        <button type="submit" disabled={slideLoading}
+                          className="bg-green-600 hover:bg-green-700 text-white font-semibold px-5 py-2 rounded-xl text-sm transition-colors disabled:opacity-50">
+                          {slideLoading ? "Saving…" : "Save Slide"}
+                        </button>
+                        <button type="button" onClick={() => setSlideEditing(null)}
+                          className="text-sm text-gray-500 hover:text-gray-700 font-medium">
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {featuredEventId && (() => {
+              const ev = events.find(e => e.id === featuredEventId);
+              return ev ? (
+                <div className="mt-6 bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold text-amber-600 uppercase tracking-wide mb-1">📌 Pinned to Slider (Slide 1)</p>
+                      <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
+                      <p className="text-gray-500 text-xs mt-0.5">{ev.date}{ev.time ? ` · ${ev.time}` : ""}</p>
+                    </div>
+                    <button onClick={handleUnpinEvent} disabled={pinLoading === "unpin"}
+                      className="text-xs text-red-400 hover:text-red-600 font-medium disabled:opacity-50">
+                      {pinLoading === "unpin" ? "…" : "Unpin"}
+                    </button>
+                  </div>
+                </div>
+              ) : null;
+            })()}
           </>
         )}
       </main>
