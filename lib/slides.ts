@@ -4,6 +4,7 @@ export interface Slide {
   imageUrl?: string;
   gradient: string;
   isEvent?: boolean;
+  duration?: number; // ms, default 4500
 }
 
 export const DEFAULT_SLIDES: Slide[] = [

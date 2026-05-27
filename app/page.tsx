@@ -20,7 +20,11 @@ export default async function Home() {
   );
 
   // Fetch featured event (pinned to slider)
-  const featuredId = (await redis.get("slider:featured")) as string | null;
+  const [featuredId, rawEventDuration] = await Promise.all([
+    redis.get("slider:featured") as Promise<string | null>,
+    redis.get("slider:eventDuration"),
+  ]);
+  const eventDuration = Number(rawEventDuration) || 8000;
   const featuredSlides: Slide[] = [];
   if (featuredId) {
     const ev = await redis.hgetall<Record<string, string>>(`event:${featuredId}`);
@@ -31,6 +35,7 @@ export default async function Home() {
         imageUrl: ev.imageUrl ? ev.imageUrl.replace(/_z\.(jpg|jpeg|png)$/i, "_b.$1") : "",
         gradient: "from-green-900 via-green-800 to-teal-900",
         isEvent: true,
+        duration: eventDuration,
       });
     }
   }

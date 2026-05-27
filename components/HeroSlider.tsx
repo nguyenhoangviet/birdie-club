@@ -13,9 +13,10 @@ export function HeroSlider({ slides }: { slides: Slide[] }) {
   }, [slides.length]);
 
   useEffect(() => {
-    const t = setInterval(() => setIdx((i) => (i + 1) % slides.length), 4500);
-    return () => clearInterval(t);
-  }, [slides.length]);
+    const dur = slides[idx]?.duration ?? 4500;
+    const t = setTimeout(() => setIdx((i) => (i + 1) % slides.length), dur);
+    return () => clearTimeout(t);
+  }, [idx, slides]);
 
   return (
     <div className="relative overflow-hidden h-[520px] w-full">

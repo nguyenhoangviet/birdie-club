@@ -9,14 +9,18 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const slides = await Promise.all(
-    [0, 1, 2].map(async (i) => {
-      const s = await redis.hgetall<Record<string, string>>(`slider:${i}`);
-      return s && s.title ? s : DEFAULT_SLIDES[i];
-    })
-  );
+  const [slides, rawDuration] = await Promise.all([
+    Promise.all(
+      [0, 1, 2].map(async (i) => {
+        const s = await redis.hgetall<Record<string, string>>(`slider:${i}`);
+        return s && s.title ? s : DEFAULT_SLIDES[i];
+      })
+    ),
+    redis.get("slider:eventDuration"),
+  ]);
 
-  return NextResponse.json({ slides });
+  const eventDuration = Number(rawDuration) || 8000;
+  return NextResponse.json({ slides, eventDuration });
 }
 
 export async function PUT(req: NextRequest) {
@@ -26,6 +30,17 @@ export async function PUT(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
+
+  // Save event slide duration
+  if (body?.eventDuration !== undefined && body?.index === undefined) {
+    const dur = Number(body.eventDuration);
+    if (isNaN(dur) || dur < 1000 || dur > 60000) {
+      return NextResponse.json({ error: "Duration must be between 1 and 60 seconds" }, { status: 400 });
+    }
+    await redis.set("slider:eventDuration", String(dur));
+    return NextResponse.json({ success: true });
+  }
+
   const index = Number(body?.index);
   if (isNaN(index) || index < 0 || index > 2) {
     return NextResponse.json({ error: "Invalid slide index" }, { status: 400 });

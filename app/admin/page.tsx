@@ -30,6 +30,8 @@ export default async function AdminPage() {
   );
 
   const featuredEventId = ((await redis.get("slider:featured")) as string | null) ?? "";
+  const rawEventDuration = (await redis.get("slider:eventDuration")) as string | null;
+  const initialEventDuration = Number(rawEventDuration) || 8000;
 
   return (
     <AdminDashboard
@@ -37,6 +39,7 @@ export default async function AdminPage() {
       initialEvents={events as never}
       initialSlides={initialSlides as never}
       initialFeaturedEventId={featuredEventId}
+      initialEventDuration={initialEventDuration}
     />
   );
 }

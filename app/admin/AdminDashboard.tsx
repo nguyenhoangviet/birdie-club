@@ -39,11 +39,13 @@ export default function AdminDashboard({
   initialEvents,
   initialSlides,
   initialFeaturedEventId,
+  initialEventDuration,
 }: {
   initialActivities: Activity[];
   initialEvents: ClubEvent[];
   initialSlides: SlideConfig[];
   initialFeaturedEventId: string;
+  initialEventDuration: number;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("events");
@@ -89,6 +91,10 @@ export default function AdminDashboard({
 
   // Slider state
   const [slides, setSlides] = useState<SlideConfig[]>(initialSlides);
+  const [eventDuration, setEventDuration] = useState(initialEventDuration);
+  const [eventDurLoading, setEventDurLoading] = useState(false);
+  const [eventDurError, setEventDurError] = useState("");
+  const [eventDurSuccess, setEventDurSuccess] = useState("");
   const [slideEditing, setSlideEditing] = useState<number | null>(null);
   const [slideTitle, setSlideTitle] = useState("");
   const [slideSub, setSlideSub] = useState("");
@@ -210,6 +216,26 @@ export default function AdminDashboard({
     );
     setSlideSuccess("Slide saved!");
     setSlideEditing(null);
+  }
+
+  async function handleSaveEventDuration(e: React.FormEvent) {
+    e.preventDefault();
+    setEventDurLoading(true);
+    setEventDurError("");
+    setEventDurSuccess("");
+    const res = await fetch("/api/admin/slider", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventDuration }),
+    });
+    setEventDurLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setEventDurError(data.error ?? "Failed to save");
+      return;
+    }
+    setEventDurSuccess("Duration saved!");
+    setTimeout(() => setEventDurSuccess(""), 3000);
   }
 
   async function handleAddEvent(e: React.FormEvent) {
@@ -564,6 +590,35 @@ export default function AdminDashboard({
                 </div>
               ) : null;
             })()}
+
+            {/* Event slide duration setting */}
+            <div className="mt-6 bg-white border border-gray-200 rounded-2xl p-5">
+              <p className="text-sm font-semibold text-gray-900 mb-1">⏱️ Event Slide Duration</p>
+              <p className="text-xs text-gray-500 mb-4">
+                How long the pinned event slide stays visible before advancing (in seconds).
+              </p>
+              <form onSubmit={handleSaveEventDuration} className="flex items-center gap-3">
+                <input
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={Math.round(eventDuration / 1000)}
+                  onChange={(e) => setEventDuration(Math.max(1, Number(e.target.value)) * 1000)}
+                  className="w-24 border border-gray-300 rounded-xl px-3 py-2 text-sm text-center focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+                <span className="text-sm text-gray-500">seconds</span>
+                <button
+                  type="submit"
+                  disabled={eventDurLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-xl text-sm transition-colors disabled:opacity-50"
+                >
+                  {eventDurLoading ? "Saving…" : "Save"}
+                </button>
+                {eventDurError && <span className="text-red-500 text-xs">{eventDurError}</span>}
+                {eventDurSuccess && <span className="text-green-600 text-xs">{eventDurSuccess}</span>}
+              </form>
+            </div>
           </>
         )}
       </main>
