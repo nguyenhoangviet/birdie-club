@@ -1346,6 +1346,11 @@ function BookingsView({
   const [cancelOpenId, setCancelOpenId] = useState<string | null>(null);
   const [cancelReasons, setCancelReasons] = useState<Record<string, string>>({});
   const [localBookings, setLocalBookings] = useState<Booking[] | null>(bookings);
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const today = new Date();
+  const [calYear, setCalYear] = useState(today.getFullYear());
+  const [calMonth, setCalMonth] = useState(today.getMonth());
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
   // Sync when prop changes (initial load)
   if (bookings !== null && localBookings === null) {
@@ -1512,16 +1517,16 @@ function BookingsView({
     return (
       <div key={r.id} className={`bg-white rounded-xl border px-5 py-4 ${r.status === "pending" ? "border-amber-300 shadow-sm" : "border-gray-200"}`}>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-          <span className="font-bold text-sm shrink-0 w-32 text-green-700">{r.eventTime ?? "—"}</span>
+          <span className="font-bold text-sm shrink-0 w-32 text-purple-600">{r.eventTime ?? "—"}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">EVENT</span>
-              <p className="font-semibold text-gray-900 text-sm">{r.name}</p>
+              <p className="font-semibold text-gray-900 text-sm">{r.eventTitle}</p>
               {r.status === "pending" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Pending</span>}
               {r.status === "confirmed" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Confirmed</span>}
             </div>
+            <p className="text-gray-700 text-xs mt-0.5">{r.name} · 🎟️ {r.seats} seat{Number(r.seats) > 1 ? "s" : ""}</p>
             <p className="text-gray-400 text-xs truncate">{r.email}{r.phone ? ` · ${r.phone}` : ""}</p>
-            <p className="text-gray-500 text-xs mt-0.5 font-medium">{r.eventTitle} · 🎟️ {r.seats} seat{Number(r.seats) > 1 ? "s" : ""}</p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {r.status === "pending" && (
@@ -1540,41 +1545,144 @@ function BookingsView({
     );
   }
 
-  return (
-    <div className="space-y-6">
-      <div className="flex gap-3 text-sm text-gray-500 flex-wrap">
-        <span>{localBookings.length} total</span>
-        {pending.length > 0 && (
-          <span className="text-amber-600 font-medium">· {pending.length} awaiting confirmation</span>
+  function renderDayEntries(dateStr: string) {
+    const entries = grouped[dateStr];
+    if (!entries) return null;
+    return entries
+      .slice()
+      .sort((a, b) => {
+        const aMin = a.kind === "booking" ? Number(a.b.hour) * 60 : getMinutes(a.r.eventTime);
+        const bMin = b.kind === "booking" ? Number(b.b.hour) * 60 : getMinutes(b.r.eventTime);
+        return aMin - bMin;
+      })
+      .map((entry) => entry.kind === "booking" ? renderBooking(entry.b) : renderReg(entry.r));
+  }
+
+  function renderCalendar() {
+    const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const firstDay = new Date(calYear, calMonth, 1);
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const monthLabel = firstDay.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    function prevMonth() {
+      if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
+      else setCalMonth(m => m - 1);
+      setSelectedDay(null);
+    }
+    function nextMonth() {
+      if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
+      else setCalMonth(m => m + 1);
+      setSelectedDay(null);
+    }
+
+    const cells: (number | null)[] = [];
+    for (let i = 0; i < startOffset; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 font-bold text-lg">‹</button>
+          <span className="font-semibold text-gray-900 capitalize">{monthLabel}</span>
+          <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 font-bold text-lg">›</button>
+        </div>
+        <div className="grid grid-cols-7 mb-1">
+          {DAYS.map(d => (
+            <div key={d} className="text-center text-xs font-semibold text-gray-400 py-1">{d}</div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-1">
+          {cells.map((day, i) => {
+            if (!day) return <div key={i} />;
+            const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+            const entries = grouped[dateStr] ?? [];
+            const bookingCount = entries.filter(e => e.kind === "booking").length;
+            const regCount = entries.filter(e => e.kind === "reg").length;
+            const isSelected = selectedDay === dateStr;
+            const isToday = dateStr === todayStr;
+            const hasEntries = entries.length > 0;
+            return (
+              <button key={dateStr}
+                onClick={() => setSelectedDay(isSelected ? null : dateStr)}
+                className={`relative flex flex-col items-center py-2 rounded-xl text-sm transition-colors ${
+                  isSelected ? "bg-green-50 ring-2 ring-green-500" :
+                  hasEntries ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"
+                }`}
+              >
+                <span className={`font-${isToday ? "bold" : "normal"} ${
+                  isToday ? "text-green-700" : hasEntries ? "text-gray-900" : "text-gray-300"
+                }`}>{day}</span>
+                <div className="flex gap-0.5 mt-1 h-2 items-center">
+                  {bookingCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-green-500" />}
+                  {regCount > 0 && <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex gap-3 mt-3 text-xs text-gray-400">
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Slot booking</span>
+          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-500 inline-block" /> Event registration</span>
+        </div>
+        {selectedDay && (
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              {new Date(selectedDay + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            </h3>
+            <div className="space-y-2">
+              {renderDayEntries(selectedDay) ?? <p className="text-sm text-gray-400">No bookings on this day.</p>}
+            </div>
+          </div>
         )}
       </div>
+    );
+  }
 
-      {sortedDates.map((date) => (
-        <div key={date}>
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            {new Date(date + "T00:00:00").toLocaleDateString("en-GB", {
-              weekday: "long", day: "numeric", month: "long", year: "numeric",
-            })}
-          </h3>
-          <div className="space-y-2">
-            {grouped[date]
-              .sort((a, b) => {
-                const aMin = a.kind === "booking" ? Number(a.b.hour) * 60 : getMinutes(a.r.eventTime);
-                const bMin = b.kind === "booking" ? Number(b.b.hour) * 60 : getMinutes(b.r.eventTime);
-                return aMin - bMin;
-              })
-              .map((entry) => entry.kind === "booking" ? renderBooking(entry.b) : renderReg(entry.r))}
-          </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex gap-3 text-sm text-gray-500">
+          <span>{localBookings.length} total</span>
+          {pending.length > 0 && (
+            <span className="text-amber-600 font-medium">· {pending.length} awaiting confirmation</span>
+          )}
         </div>
-      ))}
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+          <button onClick={() => setViewMode("list")}
+            className={`px-3 py-1.5 transition-colors ${viewMode === "list" ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}>
+            ☰ List
+          </button>
+          <button onClick={() => setViewMode("calendar")}
+            className={`px-3 py-1.5 transition-colors ${viewMode === "calendar" ? "bg-green-600 text-white" : "text-gray-500 hover:bg-gray-50"}`}>
+            📅 Calendar
+          </button>
+        </div>
+      </div>
 
-      {cancelled.length > 0 && (
-        <details className="mt-4">
-          <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-600">
-            Show {cancelled.length} cancelled booking{cancelled.length !== 1 ? "s" : ""}
-          </summary>
-          <div className="space-y-2 mt-2">{cancelled.map(renderBooking)}</div>
-        </details>
+      {viewMode === "calendar" ? renderCalendar() : (
+        <>
+          {sortedDates.map((date) => (
+            <div key={date}>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {new Date(date + "T00:00:00").toLocaleDateString("en-GB", {
+                  weekday: "long", day: "numeric", month: "long", year: "numeric",
+                })}
+              </h3>
+              <div className="space-y-2">{renderDayEntries(date)}</div>
+            </div>
+          ))}
+
+          {cancelled.length > 0 && (
+            <details className="mt-4">
+              <summary className="text-sm text-gray-400 cursor-pointer hover:text-gray-600">
+                Show {cancelled.length} cancelled booking{cancelled.length !== 1 ? "s" : ""}
+              </summary>
+              <div className="space-y-2 mt-2">{cancelled.map(renderBooking)}</div>
+            </details>
+          )}
+        </>
       )}
     </div>
   );
