@@ -32,12 +32,17 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Pipeline GET for all slot keys (max ~84 keys for 7-day view)
+  // Pipeline GET for all slot keys + event block keys
   const pipeline = redis.pipeline();
   for (const { date, hour } of pairs) {
     pipeline.get(`slot:${date}:${hour}`);
   }
-  const bookingIds = await pipeline.exec<(string | null)[]>();
+  for (const { date, hour } of pairs) {
+    pipeline.get(`eventBlock:${date}:${hour}`);
+  }
+  const results = await pipeline.exec<(string | null)[]>();
+  const bookingIds = results.slice(0, pairs.length);
+  const eventBlocks = results.slice(pairs.length);
 
   // Collect unique non-null booking IDs and fetch their data
   const uniqueIds = [...new Set(bookingIds.filter((id): id is string => id !== null))];
@@ -57,6 +62,7 @@ export async function GET(req: NextRequest) {
 
   const slots = pairs.map(({ date, hour }, idx) => {
     const bookingId = bookingIds[idx];
+    const isEventBlocked = !!eventBlocks[idx];
     let status: "available" | "mine" | "booked" | "past" | "lunch";
     let outBookingId: string | undefined;
 
@@ -64,6 +70,8 @@ export async function GET(req: NextRequest) {
       status = "past";
     } else if (LUNCH_HOURS.includes(hour)) {
       status = "lunch";
+    } else if (isEventBlocked) {
+      status = "booked";
     } else if (bookingId && bookingMap[bookingId]) {
       const b = bookingMap[bookingId];
       if (b.email === session.email) {

@@ -2,17 +2,52 @@ import { getSession } from "@/lib/session";
 import Link from "next/link";
 import { NavBar } from "@/components/NavBar";
 import { HeroSlider } from "@/components/HeroSlider";
+import { redis } from "@/lib/redis";
+import { DEFAULT_SLIDES, type Slide } from "@/lib/slides";
 
 export default async function Home() {
   const session = await getSession();
   const isLoggedIn = session.isLoggedIn;
+
+  // Fetch editable base slides from Redis (fall back to defaults)
+  const baseSlides: Slide[] = await Promise.all(
+    [0, 1, 2].map(async (i) => {
+      const s = await redis.hgetall<Record<string, string>>(`slider:${i}`);
+      return (s && s.title)
+        ? { title: s.title, sub: s.sub ?? "", imageUrl: s.imageUrl ?? "", gradient: s.gradient || DEFAULT_SLIDES[i].gradient }
+        : DEFAULT_SLIDES[i];
+    })
+  );
+
+  // Fetch featured event (pinned to slider)
+  const [featuredId, rawEventDuration] = await Promise.all([
+    redis.get("slider:featured") as Promise<string | null>,
+    redis.get("slider:eventDuration"),
+  ]);
+  const eventDuration = Number(rawEventDuration) || 8000;
+  const featuredSlides: Slide[] = [];
+  if (featuredId) {
+    const ev = await redis.hgetall<Record<string, string>>(`event:${featuredId}`);
+    if (ev && ev.title) {
+      featuredSlides.push({
+        title: ev.title,
+        sub: [ev.time, ev.location].filter(Boolean).join(" · "),
+        imageUrl: ev.imageUrl ? ev.imageUrl.replace(/_z\.(jpg|jpeg|png)$/i, "_b.$1") : "",
+        gradient: "from-green-900 via-green-800 to-teal-900",
+        isEvent: true,
+        duration: eventDuration,
+      });
+    }
+  }
+
+  const slides: Slide[] = [...featuredSlides, ...baseSlides];
 
   return (
     <div className="min-h-screen bg-gray-50">
       <NavBar email={isLoggedIn ? session.email : null} />
 
       {/* Hero Slider */}
-      <HeroSlider />
+      <HeroSlider slides={slides} />
 
       {/* Book CTA */}
       <section className="bg-white py-12 px-4 text-center border-b border-gray-100">

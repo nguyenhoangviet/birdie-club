@@ -73,6 +73,58 @@ export async function sendBookingCancelledEmail(email: string, name: string, dat
   );
 }
 
+export async function sendEventRegistrationConfirmedEmail(
+  email: string,
+  name: string,
+  eventTitle: string,
+  eventDate: string,
+  eventTime: string,
+  seats: number
+) {
+  const d = new Date(eventDate + "T12:00:00");
+  const dateStr = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  await sendEmail(
+    email,
+    `✅ Your registration for "${eventTitle}" is confirmed!`,
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h1 style="color:#16a34a;font-size:22px;margin-bottom:4px;">🏸 The Birdie Club</h1>
+      <p style="color:#6b7280;margin-bottom:20px;">Hi ${name}, your registration has been confirmed. See you there!</p>
+      <div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:#15803d;">🎾 ${eventTitle}</p>
+        <p style="margin:0 0 4px 0;font-size:14px;color:#166534;">📅 ${dateStr}</p>
+        ${eventTime ? `<p style="margin:0 0 4px 0;font-size:14px;color:#166534;">🕐 ${eventTime}</p>` : ""}
+        <p style="margin:0;font-size:14px;color:#166534;">🎟️ ${seats} seat${seats > 1 ? "s" : ""} reserved</p>
+      </div>
+      <p style="color:#6b7280;font-size:14px;">If you need to cancel, please contact us as soon as possible. We look forward to seeing you!</p>
+    </div>`
+  );
+}
+
+export async function sendEventCancelledEmail(
+  email: string,
+  name: string,
+  eventTitle: string,
+  eventDate: string,
+  reason: string
+) {
+  const d = new Date(eventDate + "T12:00:00");
+  const dateStr = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  await sendEmail(
+    email,
+    `❌ Event cancelled: "${eventTitle}"`,
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h1 style="color:#16a34a;font-size:22px;margin-bottom:4px;">🏸 The Birdie Club</h1>
+      <p style="color:#6b7280;margin-bottom:20px;">Hi ${name}, we're sorry to inform you that the following event has been cancelled.</p>
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:#b91c1c;">🎾 ${eventTitle}</p>
+        <p style="margin:0;font-size:14px;color:#991b1b;">📅 ${dateStr}</p>
+      </div>
+      ${reason ? `<p style="color:#374151;font-size:14px;margin-bottom:8px;"><strong>Reason:</strong> ${reason}</p>` : ""}
+      <p style="color:#6b7280;font-size:14px;">We apologise for the inconvenience. Stay tuned for future events!</p>
+    </div>`
+  );
+}
+
 export async function sendOtpEmail(email: string, otp: string) {
   const gmailUser = process.env.GMAIL_USER;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
