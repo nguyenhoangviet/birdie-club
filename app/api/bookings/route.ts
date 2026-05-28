@@ -3,6 +3,7 @@ import { redis } from "@/lib/redis";
 import { getSession } from "@/lib/session";
 import { SLOT_HOURS, isPastSlot, LUNCH_HOURS } from "@/lib/slots";
 import { randomUUID } from "crypto";
+import { upsertMember } from "@/lib/members";
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -55,6 +56,9 @@ export async function POST(req: NextRequest) {
 
   await redis.hset(`booking:${id}`, { id, email, date, hour: hourNum, status: "pending", createdAt, name: nameStr, phone: phoneStr });
   await redis.zadd(`userBookings:${email}`, { score: Date.now(), member: id });
+
+  // Auto-register member
+  await upsertMember(email, nameStr, phoneStr, "booking");
 
   return NextResponse.json(
     { booking: { id, email, date, hour: hourNum, status: "pending", createdAt, name: nameStr, phone: phoneStr } },

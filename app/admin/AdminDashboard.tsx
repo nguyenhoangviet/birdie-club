@@ -53,7 +53,27 @@ interface SlideConfig {
   gradient: string;
 }
 
-type Tab = "bookings" | "events" | "activities" | "slider";
+interface Member {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  source: string;
+  createdAt: string;
+}
+
+interface Campaign {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  message?: string;
+  sentAt: string;
+  sentCount: string;
+  recipients: string;
+}
+
+type Tab = "bookings" | "events" | "activities" | "slider" | "members" | "outreach";
 
 export default function AdminDashboard({
   initialActivities,
@@ -61,12 +81,16 @@ export default function AdminDashboard({
   initialSlides,
   initialFeaturedEventId,
   initialEventDuration,
+  initialMembers,
+  initialCampaigns,
 }: {
   initialActivities: Activity[];
   initialEvents: ClubEvent[];
   initialSlides: SlideConfig[];
   initialFeaturedEventId: string;
   initialEventDuration: number;
+  initialMembers: Member[];
+  initialCampaigns: Campaign[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("events");
@@ -170,6 +194,24 @@ export default function AdminDashboard({
   const [slideLoading, setSlideLoading] = useState(false);
   const [slideError, setSlideError] = useState("");
   const [slideSuccess, setSlideSuccess] = useState("");
+
+  // Members state
+  const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [memName, setMemName] = useState("");
+  const [memEmail, setMemEmail] = useState("");
+  const [memPhone, setMemPhone] = useState("");
+  const [memLoading, setMemLoading] = useState(false);
+  const [memError, setMemError] = useState("");
+  const [memSuccess, setMemSuccess] = useState("");
+
+  // Outreach / Campaigns state
+  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+  const [outreachEventId, setOutreachEventId] = useState("");
+  const [outreachRecipients, setOutreachRecipients] = useState<Set<string>>(new Set());
+  const [outreachMessage, setOutreachMessage] = useState("");
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachError, setOutreachError] = useState("");
+  const [outreachSuccess, setOutreachSuccess] = useState("");
 
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -387,6 +429,62 @@ export default function AdminDashboard({
     setEvents((prev) => prev.filter((ev) => ev.id !== id));
   }
 
+  async function handleAddMember(e: React.FormEvent) {
+    e.preventDefault();
+    setMemLoading(true); setMemError(""); setMemSuccess("");
+    const res = await fetch("/api/admin/members", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: memName, email: memEmail, phone: memPhone }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMemLoading(false);
+    if (!res.ok) { setMemError(data.error ?? "Failed to add"); return; }
+    setMembers((prev) => [data.member, ...prev]);
+    setMemName(""); setMemEmail(""); setMemPhone("");
+    setMemSuccess("Member added!");
+    setTimeout(() => setMemSuccess(""), 3000);
+  }
+
+  async function handleDeleteMember(email: string) {
+    if (!confirm(`Remove ${email} from members?`)) return;
+    await fetch(`/api/admin/members/${encodeURIComponent(email)}`, { method: "DELETE" });
+    setMembers((prev) => prev.filter((m) => m.email !== email));
+  }
+
+  function handleOutreachForEvent(id: string) {
+    setOutreachEventId(id);
+    setTab("outreach");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSendOutreach(e: React.FormEvent) {
+    e.preventDefault();
+    if (!outreachEventId) { setOutreachError("Please select an event"); return; }
+    if (outreachRecipients.size === 0) { setOutreachError("Please select at least one member"); return; }
+    setOutreachLoading(true); setOutreachError(""); setOutreachSuccess("");
+    const res = await fetch("/api/admin/campaigns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: outreachEventId, recipients: [...outreachRecipients], message: outreachMessage }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setOutreachLoading(false);
+    if (!res.ok) { setOutreachError(data.error ?? "Failed to send"); return; }
+    setOutreachSuccess(`Sent to ${data.sentCount} member${data.sentCount !== 1 ? "s" : ""}!`);
+    const ev = events.find((ev) => ev.id === outreachEventId);
+    if (ev && data.campaignId) {
+      setCampaigns((prev) => [{
+        id: data.campaignId, eventId: outreachEventId, eventTitle: ev.title,
+        eventDate: ev.date, message: outreachMessage, sentAt: new Date().toISOString(),
+        sentCount: String(data.sentCount), recipients: JSON.stringify([...outreachRecipients]),
+      }, ...prev]);
+    }
+    setOutreachRecipients(new Set());
+    setOutreachMessage("");
+    setTimeout(() => setOutreachSuccess(""), 4000);
+  }
+
   const tabClass = (t: Tab) =>
     `px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
       tab === t ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -411,6 +509,8 @@ export default function AdminDashboard({
         <div className="flex gap-2 mb-8 flex-wrap">
           <button className={tabClass("bookings")} onClick={() => { setTab("bookings"); loadBookings(); }}>📋 Bookings</button>
           <button className={tabClass("events")} onClick={() => setTab("events")}>📅 Events</button>
+          <button className={tabClass("members")} onClick={() => setTab("members")}>👥 Members</button>
+          <button className={tabClass("outreach")} onClick={() => setTab("outreach")}>📧 Outreach</button>
           <button className={tabClass("activities")} onClick={() => setTab("activities")}>📸 Club Photos</button>
           <button className={tabClass("slider")} onClick={() => setTab("slider")}>🖼️ Slider</button>
         </div>
@@ -556,6 +656,10 @@ export default function AdminDashboard({
                                 className="text-xs text-purple-500 hover:text-purple-700 font-medium">
                                 {expandedEventId === ev.id ? "Hide Registrants" : "Registrants"}
                               </button>
+                              <button onClick={() => handleOutreachForEvent(ev.id)}
+                                className="text-xs text-teal-500 hover:text-teal-700 font-medium">
+                                📧 Invite
+                              </button>
                               {featuredEventId === ev.id ? (
                                 <button onClick={handleUnpinEvent} disabled={pinLoading === "unpin"}
                                   className="text-xs text-amber-500 hover:text-amber-700 font-medium disabled:opacity-50">
@@ -653,6 +757,182 @@ export default function AdminDashboard({
                           </div>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "members" && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">Add Member</h2>
+              <p className="text-sm text-gray-500 mb-5">Members are also added automatically whenever someone makes a booking or registers for an event.</p>
+              <form onSubmit={handleAddMember} className="space-y-4">
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full name <span className="text-red-400">*</span></label>
+                    <input type="text" value={memName} onChange={e => setMemName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="Jane Smith" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-400">*</span></label>
+                    <input type="email" value={memEmail} onChange={e => setMemEmail(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="jane@example.com" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input type="tel" value={memPhone} onChange={e => setMemPhone(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="+84 xxx xxx xxxx" />
+                  </div>
+                </div>
+                {memError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{memError}</p>}
+                {memSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{memSuccess}</p>}
+                <button type="submit" disabled={memLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                  {memLoading ? "Adding…" : "Add Member"}
+                </button>
+              </form>
+            </div>
+
+            <h2 className="text-lg font-bold text-gray-900 mb-4">All Members <span className="text-gray-400 font-normal text-base">({members.length})</span></h2>
+            {members.length === 0 ? (
+              <div className="text-center py-14 bg-white rounded-2xl border border-gray-200 text-gray-400">No members yet. They are added automatically when someone books or registers for an event.</div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50 text-gray-400 text-xs font-medium">
+                        <th className="text-left px-4 py-3">Name</th>
+                        <th className="text-left px-4 py-3">Email</th>
+                        <th className="text-left px-4 py-3">Phone</th>
+                        <th className="text-left px-4 py-3">Source</th>
+                        <th className="text-left px-4 py-3">Joined</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.map((m) => (
+                        <tr key={m.email} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                          <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
+                          <td className="px-4 py-3 text-gray-500">{m.email}</td>
+                          <td className="px-4 py-3 text-gray-400">{m.phone || "—"}</td>
+                          <td className="px-4 py-3">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                              m.source === "booking" ? "bg-blue-50 text-blue-600" :
+                              m.source === "event" ? "bg-teal-50 text-teal-600" :
+                              "bg-gray-100 text-gray-500"
+                            }`}>{m.source}</span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
+                          <td className="px-4 py-3 text-right">
+                            <button onClick={() => handleDeleteMember(m.email)} className="text-xs text-red-400 hover:text-red-600 font-medium">Remove</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "outreach" && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">Send Event Invitation</h2>
+              <p className="text-sm text-gray-500 mb-5">Pick an event and members to invite. Each recipient gets a personalised email with a link to register on the website.</p>
+              <form onSubmit={handleSendOutreach} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Event <span className="text-red-400">*</span></label>
+                  <select value={outreachEventId} onChange={e => setOutreachEventId(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="">— Select an event —</option>
+                    {events.filter(ev => ev.cancelled !== "1").map((ev) => (
+                      <option key={ev.id} value={ev.id}>{ev.title} · {new Date(ev.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700">Recipients <span className="text-red-400">*</span></label>
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setOutreachRecipients(new Set(members.map(m => m.email)))}
+                        className="text-xs text-green-600 hover:text-green-800 font-medium">Select all</button>
+                      <button type="button" onClick={() => setOutreachRecipients(new Set())}
+                        className="text-xs text-gray-400 hover:text-gray-600 font-medium">Clear</button>
+                    </div>
+                  </div>
+                  {members.length === 0 ? (
+                    <p className="text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-6 text-center">No members yet. Add members in the Members tab.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl divide-y divide-gray-50 max-h-64 overflow-y-auto">
+                      {members.map((m) => (
+                        <label key={m.email} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={outreachRecipients.has(m.email)}
+                            onChange={(e) => {
+                              setOutreachRecipients((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) { next.add(m.email); } else { next.delete(m.email); }
+                                return next;
+                              });
+                            }}
+                            className="w-4 h-4 accent-green-600" />
+                          <span className="flex-1 text-sm text-gray-800">{m.name}</span>
+                          <span className="text-xs text-gray-400">{m.email}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {outreachRecipients.size > 0 && (
+                    <p className="text-xs text-green-600 mt-1.5">{outreachRecipients.size} recipient{outreachRecipients.size !== 1 ? "s" : ""} selected</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Personal note <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <textarea value={outreachMessage} onChange={e => setOutreachMessage(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                    rows={3} placeholder="Add a personal note included in the invitation email…" />
+                </div>
+
+                {outreachError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{outreachError}</p>}
+                {outreachSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{outreachSuccess}</p>}
+                <button type="submit" disabled={outreachLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                  {outreachLoading ? "Sending…" : `Send Invitation${outreachRecipients.size > 0 ? ` to ${outreachRecipients.size}` : ""}`}
+                </button>
+              </form>
+            </div>
+
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Campaign History <span className="text-gray-400 font-normal text-base">({campaigns.length})</span></h2>
+            {campaigns.length === 0 ? (
+              <div className="text-center py-14 bg-white rounded-2xl border border-gray-200 text-gray-400">No campaigns sent yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {campaigns.map((c) => {
+                  const recipientList: string[] = JSON.parse(c.recipients ?? "[]");
+                  return (
+                    <div key={c.id} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-gray-900 text-sm">{c.eventTitle}</p>
+                          <p className="text-green-600 text-xs mt-0.5">{new Date(c.eventDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                          {c.message && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{c.message}</p>}
+                          <p className="text-gray-400 text-xs mt-1.5">
+                            Sent to {recipientList.length} member{recipientList.length !== 1 ? "s" : ""} · {new Date(c.sentAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                        <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">{c.sentCount} sent</span>
+                      </div>
                     </div>
                   );
                 })}

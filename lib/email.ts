@@ -153,3 +153,38 @@ export async function sendOtpEmail(email: string, otp: string) {
     html: HTML_TEMPLATE(otp),
   });
 }
+
+export async function sendOutreachEmail(
+  email: string,
+  name: string,
+  eventId: string,
+  eventTitle: string,
+  eventDate: string,
+  eventTime: string,
+  message: string,
+  siteUrl: string
+) {
+  const d = new Date(eventDate + "T12:00:00");
+  const dateStr = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const registerUrl = `${siteUrl}/events#${eventId}`;
+  await sendEmail(
+    email,
+    `🎾 You're invited: ${eventTitle}`,
+    `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px;">
+      <h1 style="color:#16a34a;font-size:22px;margin-bottom:4px;">🏸 The Birdie Club</h1>
+      <p style="color:#6b7280;margin-bottom:20px;">Hi ${name}, we have an upcoming event we think you'll love!</p>
+      <div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
+        <p style="margin:0 0 6px 0;font-size:16px;font-weight:700;color:#15803d;">🎾 ${eventTitle}</p>
+        <p style="margin:0 0 4px 0;font-size:14px;color:#166534;">📅 ${dateStr}</p>
+        ${eventTime ? `<p style="margin:0;font-size:14px;color:#166534;">🕐 ${eventTime}</p>` : ""}
+      </div>
+      ${message ? `<p style="color:#374151;font-size:14px;margin-bottom:20px;white-space:pre-line;">${message}</p>` : ""}
+      <a href="${registerUrl}"
+        style="display:inline-block;background:#16a34a;color:#fff;font-weight:700;font-size:15px;
+               padding:14px 28px;border-radius:12px;text-decoration:none;margin-bottom:20px;">
+        Register Now →
+      </a>
+      <p style="color:#9ca3af;font-size:12px;">Login is required to register. If you no longer wish to receive updates, please contact us.</p>
+    </div>`
+  );
+}

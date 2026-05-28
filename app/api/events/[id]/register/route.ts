@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redis } from "@/lib/redis";
+import { upsertMember } from "@/lib/members";
 
 export async function POST(
   req: NextRequest,
@@ -65,6 +66,9 @@ export async function POST(
   if (totalSlots > 0) {
     await redis.incrby(`eventUsedSlots:${id}`, seats);
   }
+
+  // Auto-register member
+  await upsertMember(email, name, phone, "event");
 
   return NextResponse.json({ success: true, regId });
 }
