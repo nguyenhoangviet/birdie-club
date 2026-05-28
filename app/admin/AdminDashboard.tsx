@@ -504,6 +504,7 @@ export default function AdminDashboard({
     e.preventDefault();
     if (!outreachEventId) { setOutreachError("Please select an event"); return; }
     if (outreachRecipients.size === 0) { setOutreachError("Please select at least one member"); return; }
+    const recipientCount = outreachRecipients.size;
     setOutreachLoading(true); setOutreachError(""); setOutreachSuccess("");
     const res = await fetch("/api/admin/campaigns", {
       method: "POST",
@@ -513,13 +514,18 @@ export default function AdminDashboard({
     const data = await res.json().catch(() => ({}));
     setOutreachLoading(false);
     if (!res.ok) { setOutreachError(data.error ?? "Failed to send"); return; }
-    setOutreachSuccess(`Sent to ${data.sentCount} member${data.sentCount !== 1 ? "s" : ""}!`);
+    const sentCount = Number(data.sentCount ?? 0);
+    if (sentCount < recipientCount) {
+      setOutreachSuccess(`Sent to ${sentCount} of ${recipientCount} selected member${recipientCount !== 1 ? "s" : ""}.`);
+    } else {
+      setOutreachSuccess(`Sent to ${sentCount} member${sentCount !== 1 ? "s" : ""}!`);
+    }
     const ev = events.find((ev) => ev.id === outreachEventId);
     if (ev && data.campaignId) {
       setCampaigns((prev) => [{
         id: data.campaignId, eventId: outreachEventId, eventTitle: ev.title,
         eventDate: ev.date, message: outreachMessage, sentAt: new Date().toISOString(),
-        sentCount: String(data.sentCount), recipients: JSON.stringify([...outreachRecipients]),
+        sentCount: String(sentCount), recipients: JSON.stringify([...outreachRecipients]),
       }, ...prev]);
     }
     setOutreachRecipients(new Set());

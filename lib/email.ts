@@ -166,7 +166,7 @@ export async function sendOutreachEmail(
 ) {
   const d = new Date(eventDate + "T12:00:00");
   const dateStr = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  const registerUrl = `${siteUrl}/events#${eventId}`;
+  const registerUrl = `${siteUrl}/events?register=1#${eventId}`;
   await sendEmail(
     email,
     `🎾 You're invited: ${eventTitle}`,
