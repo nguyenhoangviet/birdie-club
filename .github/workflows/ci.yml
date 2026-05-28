@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          # Dummy values — build-time only, no real services are contacted
+          UPSTASH_REDIS_REST_URL: https://ci-dummy.upstash.io
+          UPSTASH_REDIS_REST_TOKEN: ci_dummy_token_not_real
+          SESSION_SECRET: ci-dummy-secret-32-chars-minimum!!
+          GMAIL_USER: ci@example.com
+          GMAIL_APP_PASSWORD: ci_dummy_password
+          ADMIN_EMAILS: admin@example.com
