@@ -9,44 +9,58 @@ export default async function AdminPage() {
   const session = await getAdminSession();
   if (!session.isAdmin) redirect("/admin/login");
 
-  const activityIds = (await redis.lrange("activities", 0, -1)) as string[];
-  const activities = (
-    await Promise.all(
-      activityIds.map((id) => redis.hgetall<Record<string, string>>(`activity:${id}`))
-    )
-  ).filter(Boolean) as unknown as Array<Record<string, string>>;
+  // Fire-and-forget — don't block page render with a full redis.keys() scan
+  syncMembersFromBookings().catch(() => {});
 
-  const eventIds = (await redis.zrange("events", 0, -1)) as string[];
-  const events = (
-    await Promise.all(
-      eventIds.map(async (id) => {
-        const ev = await redis.hgetall<Record<string, string>>(`event:${id}`);
-        if (!ev) return null;
-        const totalSlots = Number(ev.totalSlots) || 0;
-        const usedSlots = totalSlots > 0 ? Number((await redis.get(`eventUsedSlots:${id}`)) ?? 0) : 0;
-        return { ...ev, usedSlots: String(usedSlots) };
-      })
-    )
-  ).filter(Boolean) as unknown as Array<Record<string, string>>;
+  // Fetch all top-level IDs and scalar values in parallel
+  const [
+    activityIds,
+    eventIds,
+    slide0, slide1, slide2,
+    rawFeaturedId,
+    rawEventDuration,
+    campaignIds,
+  ] = await Promise.all([
+    redis.lrange("activities", 0, -1),
+    redis.zrange("events", 0, -1),
+    redis.hgetall<Record<string, string>>("slider:0"),
+    redis.hgetall<Record<string, string>>("slider:1"),
+    redis.hgetall<Record<string, string>>("slider:2"),
+    redis.get<string>("slider:featured"),
+    redis.get<string>("slider:eventDuration"),
+    redis.zrange("campaigns", 0, -1, { rev: true }),
+  ]);
 
-  const initialSlides = await Promise.all(
-    [0, 1, 2].map(async (i) => {
-      const s = await redis.hgetall<Record<string, string>>(`slider:${i}`);
-      return (s && s.title) ? { ...s, flickrUrl: s.flickrUrl ?? "" } : { ...DEFAULT_SLIDES[i], flickrUrl: "" };
-    })
-  );
-
-  const featuredEventId = ((await redis.get("slider:featured")) as string | null) ?? "";
-  const rawEventDuration = (await redis.get("slider:eventDuration")) as string | null;
+  const featuredEventId = (rawFeaturedId as string | null) ?? "";
   const initialEventDuration = Number(rawEventDuration) || 8000;
 
-  await syncMembersFromBookings();
-  const initialMembers = (await listMembers()) as unknown as Array<Record<string, string>>;
+  const rawSlides = [slide0, slide1, slide2];
+  const initialSlides = rawSlides.map((s, i) =>
+    (s && (s as Record<string, string>).title)
+      ? { ...(s as Record<string, string>), flickrUrl: (s as Record<string, string>).flickrUrl ?? "" }
+      : { ...DEFAULT_SLIDES[i], flickrUrl: "" }
+  );
 
-  const campaignIds = (await redis.zrange("campaigns", 0, -1, { rev: true })) as string[];
-  const initialCampaigns = (
-    await Promise.all(campaignIds.map((id) => redis.hgetall<Record<string, string>>(`campaign:${id}`)))
-  ).filter((campaign) => Boolean(campaign && campaign.id)) as unknown as Array<Record<string, string>>;
+  // Fetch all secondary data in parallel
+  const [activitiesRaw, eventsRaw, eventUsedSlotsRaw, initialMembers, initialCampaignsRaw] = await Promise.all([
+    Promise.all((activityIds as string[]).map((id) => redis.hgetall<Record<string, string>>(`activity:${id}`))),
+    Promise.all((eventIds as string[]).map((id) => redis.hgetall<Record<string, string>>(`event:${id}`))),
+    Promise.all((eventIds as string[]).map((id) => redis.get<string>(`eventUsedSlots:${id}`))),
+    listMembers(),
+    Promise.all((campaignIds as string[]).map((id) => redis.hgetall<Record<string, string>>(`campaign:${id}`))),
+  ]);
+
+  const activities = activitiesRaw.filter(Boolean) as unknown as Array<Record<string, string>>;
+  const events = eventsRaw
+    .map((ev, i) => {
+      if (!ev) return null;
+      const totalSlots = Number((ev as Record<string, string>).totalSlots) || 0;
+      const usedSlots = totalSlots > 0 ? Number(eventUsedSlotsRaw[i] ?? 0) : 0;
+      return { ...(ev as Record<string, string>), usedSlots: String(usedSlots) };
+    })
+    .filter(Boolean) as unknown as Array<Record<string, string>>;
+  const initialCampaigns = (initialCampaignsRaw as Array<Record<string, string> | null>)
+    .filter((c) => Boolean(c && c.id)) as unknown as Array<Record<string, string>>;
 
   return (
     <AdminDashboard

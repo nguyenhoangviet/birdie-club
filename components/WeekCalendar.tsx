@@ -71,7 +71,7 @@ const STATUS_CLASSES: Record<SlotStatus, string> = {
     "bg-green-100 hover:bg-green-200 text-green-800 border border-green-200 cursor-pointer",
   mine: "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 cursor-pointer",
   booked: "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed",
-  event: "bg-teal-100 text-teal-700 border border-teal-200 cursor-not-allowed",
+  event: "bg-purple-100 text-purple-700 border border-purple-200 cursor-not-allowed",
   past: "bg-white text-gray-300 border border-gray-100 cursor-not-allowed",
   lunch: "bg-amber-50 text-amber-400 border border-amber-100 cursor-not-allowed",
 };
