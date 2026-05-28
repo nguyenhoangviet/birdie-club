@@ -4,6 +4,7 @@ export interface Slide {
   imageUrl?: string;
   gradient: string;
   isEvent?: boolean;
+  eventId?: string;
   duration?: number; // ms, default 4500
 }
 

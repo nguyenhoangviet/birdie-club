@@ -132,9 +132,9 @@ function EventCard({ event, isPast }: { event: ClubEvent; isPast: boolean }) {
   const isCancelled = event.cancelled;
 
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md ${
+    <div id={event.id} className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md ${
       isPast || isCancelled ? "border-gray-100 opacity-55 grayscale" : "border-gray-200"
-    }`}>
+    } scroll-mt-20`}>
       {event.imageUrl && (
         <img src={event.imageUrl} alt={event.title} className="w-full h-52 object-cover" />
       )}

@@ -35,6 +35,7 @@ export default async function Home() {
         imageUrl: ev.imageUrl ? ev.imageUrl.replace(/_z\.(jpg|jpeg|png)$/i, "_b.$1") : "",
         gradient: "from-green-900 via-green-800 to-teal-900",
         isEvent: true,
+        eventId: featuredId,
         duration: eventDuration,
       });
     }
