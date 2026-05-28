@@ -203,6 +203,10 @@ export default function AdminDashboard({
   const [memLoading, setMemLoading] = useState(false);
   const [memError, setMemError] = useState("");
   const [memSuccess, setMemSuccess] = useState("");
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Outreach / Campaigns state
   const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
@@ -450,6 +454,24 @@ export default function AdminDashboard({
     if (!confirm(`Remove ${email} from members?`)) return;
     await fetch(`/api/admin/members/${encodeURIComponent(email)}`, { method: "DELETE" });
     setMembers((prev) => prev.filter((m) => m.email !== email));
+  }
+
+  function startEditMember(m: Member) {
+    setEditingEmail(m.email);
+    setEditName(m.name);
+    setEditPhone(m.phone ?? "");
+  }
+
+  async function saveEditMember(email: string) {
+    setEditSaving(true);
+    await fetch(`/api/admin/members/${encodeURIComponent(email)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editName, phone: editPhone }),
+    });
+    setMembers((prev) => prev.map((m) => m.email === email ? { ...m, name: editName, phone: editPhone } : m));
+    setEditingEmail(null);
+    setEditSaving(false);
   }
 
   function handleOutreachForEvent(id: string) {
@@ -820,20 +842,57 @@ export default function AdminDashboard({
                     <tbody>
                       {members.map((m) => (
                         <tr key={m.email} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                          <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
-                          <td className="px-4 py-3 text-gray-500">{m.email}</td>
-                          <td className="px-4 py-3 text-gray-400">{m.phone || "—"}</td>
-                          <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              m.source === "booking" ? "bg-blue-50 text-blue-600" :
-                              m.source === "event" ? "bg-teal-50 text-teal-600" :
-                              "bg-gray-100 text-gray-500"
-                            }`}>{m.source}</span>
-                          </td>
-                          <td className="px-4 py-3 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
-                          <td className="px-4 py-3 text-right">
-                            <button onClick={() => handleDeleteMember(m.email)} className="text-xs text-red-400 hover:text-red-600 font-medium">Remove</button>
-                          </td>
+                          {editingEmail === m.email ? (
+                            <>
+                              <td className="px-4 py-2">
+                                <input value={editName} onChange={e => setEditName(e.target.value)}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                              </td>
+                              <td className="px-4 py-2 text-gray-500 text-sm">{m.email}</td>
+                              <td className="px-4 py-2">
+                                <input value={editPhone} onChange={e => setEditPhone(e.target.value)}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                  m.source === "booking" ? "bg-blue-50 text-blue-600" :
+                                  m.source === "event" ? "bg-teal-50 text-teal-600" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>{m.source}</span>
+                              </td>
+                              <td className="px-4 py-2 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
+                              <td className="px-4 py-2 text-right">
+                                <div className="flex gap-2 justify-end">
+                                  <button onClick={() => saveEditMember(m.email)} disabled={editSaving}
+                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-medium disabled:opacity-50">
+                                    {editSaving ? "Saving…" : "Save"}
+                                  </button>
+                                  <button onClick={() => setEditingEmail(null)}
+                                    className="text-xs text-gray-400 hover:text-gray-600 font-medium">Cancel</button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
+                              <td className="px-4 py-3 text-gray-500">{m.email}</td>
+                              <td className="px-4 py-3 text-gray-400">{m.phone || "—"}</td>
+                              <td className="px-4 py-3">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                  m.source === "booking" ? "bg-blue-50 text-blue-600" :
+                                  m.source === "event" ? "bg-teal-50 text-teal-600" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>{m.source}</span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex gap-3 justify-end">
+                                  <button onClick={() => startEditMember(m)} className="text-xs text-blue-500 hover:text-blue-700 font-medium">Edit</button>
+                                  <button onClick={() => handleDeleteMember(m.email)} className="text-xs text-red-400 hover:text-red-600 font-medium">Remove</button>
+                                </div>
+                              </td>
+                            </>
+                          )}
                         </tr>
                       ))}
                     </tbody>
