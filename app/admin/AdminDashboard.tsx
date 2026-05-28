@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -25,6 +25,7 @@ interface ClubEvent {
   imageUrl?: string;
   flickrUrl?: string;
   totalSlots?: string;
+  usedSlots?: string;
   blockBookings?: string;
   cancelled?: string;
   cancelReason?: string;
@@ -52,7 +53,115 @@ interface SlideConfig {
   gradient: string;
 }
 
-type Tab = "bookings" | "events" | "activities" | "slider";
+interface Member {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  source: string;
+  createdAt: string;
+}
+
+interface Campaign {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  message?: string;
+  sentAt: string;
+  sentCount: string;
+  recipients: string;
+}
+
+function normalizeMember(member: Partial<Member> | null | undefined): Member | null {
+  if (!member || typeof member !== "object" || !member.email) return null;
+
+  return {
+    id: String(member.id ?? member.email),
+    email: String(member.email),
+    name: String(member.name ?? member.email),
+    phone: member.phone ? String(member.phone) : "",
+    source: String(member.source ?? "manual"),
+    createdAt: String(member.createdAt ?? ""),
+  };
+}
+
+function normalizeEvent(event: Partial<ClubEvent> | null | undefined): ClubEvent | null {
+  if (!event || typeof event !== "object" || !event.id) return null;
+
+  return {
+    id: String(event.id),
+    title: String(event.title ?? "Untitled event"),
+    date: String(event.date ?? ""),
+    time: event.time ? String(event.time) : "",
+    startTime: event.startTime ? String(event.startTime) : "",
+    endTime: event.endTime ? String(event.endTime) : "",
+    location: event.location ? String(event.location) : "",
+    description: event.description ? String(event.description) : "",
+    imageUrl: event.imageUrl ? String(event.imageUrl) : "",
+    flickrUrl: event.flickrUrl ? String(event.flickrUrl) : "",
+    totalSlots: event.totalSlots ? String(event.totalSlots) : "0",
+    usedSlots: event.usedSlots ? String(event.usedSlots) : "0",
+    blockBookings: event.blockBookings ? String(event.blockBookings) : "",
+    cancelled: event.cancelled ? String(event.cancelled) : "",
+    cancelReason: event.cancelReason ? String(event.cancelReason) : "",
+  };
+}
+
+function parseCampaignRecipients(value?: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value !== "string" || !value) return [] as string[];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
+function normalizeCampaign(campaign: Partial<Campaign> | null | undefined): Campaign | null {
+  if (!campaign || typeof campaign !== "object" || !campaign.id) return null;
+
+  return {
+    id: String(campaign.id),
+    eventId: String(campaign.eventId ?? ""),
+    eventTitle: String(campaign.eventTitle ?? "Untitled event"),
+    eventDate: String(campaign.eventDate ?? ""),
+    message: campaign.message ? String(campaign.message) : "",
+    sentAt: String(campaign.sentAt ?? ""),
+    sentCount: String(campaign.sentCount ?? "0"),
+    recipients: typeof campaign.recipients === "string" ? campaign.recipients : JSON.stringify(parseCampaignRecipients(campaign.recipients)),
+  };
+}
+
+function formatCampaignDate(value?: string, includeTime?: boolean) {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
+  return includeTime
+    ? date.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+type Tab = "bookings" | "events" | "activities" | "slider" | "members" | "outreach";
 
 export default function AdminDashboard({
   initialActivities,
@@ -60,12 +169,16 @@ export default function AdminDashboard({
   initialSlides,
   initialFeaturedEventId,
   initialEventDuration,
+  initialMembers,
+  initialCampaigns,
 }: {
   initialActivities: Activity[];
   initialEvents: ClubEvent[];
   initialSlides: SlideConfig[];
   initialFeaturedEventId: string;
   initialEventDuration: number;
+  initialMembers: Member[];
+  initialCampaigns: Campaign[];
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("events");
@@ -98,7 +211,7 @@ export default function AdminDashboard({
   }
 
   // Events state
-  const [events, setEvents] = useState<ClubEvent[]>(initialEvents);
+  const [events, setEvents] = useState<ClubEvent[]>(() => initialEvents.map(normalizeEvent).filter((event): event is ClubEvent => Boolean(event)));
   const [evTitle, setEvTitle] = useState("");
   const [evDate, setEvDate] = useState("");
   const [evStartTime, setEvStartTime] = useState("");
@@ -119,6 +232,39 @@ export default function AdminDashboard({
   // Event registrations (for Bookings tab)
   const [registrations, setRegistrations] = useState<EventRegistration[] | null>(null);
 
+  // Per-event registrations (Events tab inline panel)
+  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [eventRegs, setEventRegs] = useState<Record<string, EventRegistration[]>>({});
+  const [eventRegsLoading, setEventRegsLoading] = useState<string | null>(null);
+
+  async function toggleEventRegistrants(id: string) {
+    if (expandedEventId === id) { setExpandedEventId(null); return; }
+    setExpandedEventId(id);
+    if (eventRegs[id]) return;
+    setEventRegsLoading(id);
+    const res = await fetch(`/api/admin/events/${id}/registrations`);
+    const data = await res.json().catch(() => ({ registrations: [] }));
+    setEventRegs((prev) => ({ ...prev, [id]: data.registrations ?? [] }));
+    setEventRegsLoading(null);
+  }
+
+  async function handleConfirmEventReg(regId: string, eventId: string) {
+    await fetch(`/api/admin/events/${eventId}/registrations/${regId}`, { method: "PUT" });
+    setEventRegs((prev) => ({
+      ...prev,
+      [eventId]: (prev[eventId] ?? []).map((r) => r.id === regId ? { ...r, status: "confirmed" } : r),
+    }));
+  }
+
+  async function handleCancelEventReg(regId: string, eventId: string) {
+    if (!confirm("Cancel this registration?")) return;
+    await fetch(`/api/admin/events/${eventId}/registrations/${regId}`, { method: "DELETE" });
+    setEventRegs((prev) => ({
+      ...prev,
+      [eventId]: (prev[eventId] ?? []).map((r) => r.id === regId ? { ...r, status: "cancelled" } : r),
+    }));
+  }
+
   // Featured event (slider pin)
   const [featuredEventId, setFeaturedEventId] = useState<string>(initialFeaturedEventId);
   const [pinLoading, setPinLoading] = useState<string | null>(null);
@@ -136,6 +282,59 @@ export default function AdminDashboard({
   const [slideLoading, setSlideLoading] = useState(false);
   const [slideError, setSlideError] = useState("");
   const [slideSuccess, setSlideSuccess] = useState("");
+
+  // Members state
+  const [members, setMembers] = useState<Member[]>(() => initialMembers.map(normalizeMember).filter((member): member is Member => Boolean(member)));
+  const [memName, setMemName] = useState("");
+  const [memEmail, setMemEmail] = useState("");
+  const [memPhone, setMemPhone] = useState("");
+  const [memLoading, setMemLoading] = useState(false);
+  const [memError, setMemError] = useState("");
+  const [memSuccess, setMemSuccess] = useState("");
+  const [editingEmail, setEditingEmail] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  // Outreach / Campaigns state
+  const [campaigns, setCampaigns] = useState<Campaign[]>(() => initialCampaigns.map(normalizeCampaign).filter((campaign): campaign is Campaign => Boolean(campaign)));
+  const [outreachEventId, setOutreachEventId] = useState("");
+  const [outreachRecipients, setOutreachRecipients] = useState<Set<string>>(new Set());
+  const [outreachMessage, setOutreachMessage] = useState("");
+  const [outreachLoading, setOutreachLoading] = useState(false);
+  const [outreachError, setOutreachError] = useState("");
+  const [outreachSuccess, setOutreachSuccess] = useState("");
+
+  useEffect(() => {
+    if (tab !== "members" && tab !== "outreach") return;
+
+    let cancelled = false;
+
+    async function refreshMembers() {
+      try {
+        const res = await fetch("/api/admin/members", { cache: "no-store" });
+        const data = await res.json().catch(() => ({ members: [] }));
+        if (!cancelled && res.ok) {
+          const nextMembers = Array.isArray(data.members)
+            ? (data.members as Array<Partial<Member> | null | undefined>)
+              .map(normalizeMember)
+              .filter((member): member is Member => Boolean(member))
+            : [];
+          setMembers(nextMembers);
+        }
+      } catch {
+        if (!cancelled) {
+          setMemError("Failed to load members");
+        }
+      }
+    }
+
+    refreshMembers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
@@ -353,6 +552,86 @@ export default function AdminDashboard({
     setEvents((prev) => prev.filter((ev) => ev.id !== id));
   }
 
+  async function handleAddMember(e: React.FormEvent) {
+    e.preventDefault();
+    setMemLoading(true); setMemError(""); setMemSuccess("");
+    const res = await fetch("/api/admin/members", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: memName, email: memEmail, phone: memPhone }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setMemLoading(false);
+    if (!res.ok) { setMemError(data.error ?? "Failed to add"); return; }
+    setMembers((prev) => [data.member, ...prev]);
+    setMemName(""); setMemEmail(""); setMemPhone("");
+    setMemSuccess("Member added!");
+    setTimeout(() => setMemSuccess(""), 3000);
+  }
+
+  async function handleDeleteMember(email: string) {
+    if (!confirm(`Remove ${email} from members?`)) return;
+    await fetch(`/api/admin/members/${encodeURIComponent(email)}`, { method: "DELETE" });
+    setMembers((prev) => prev.filter((m) => m.email !== email));
+  }
+
+  function startEditMember(m: Member) {
+    setEditingEmail(m.email);
+    setEditName(m.name);
+    setEditPhone(m.phone ?? "");
+  }
+
+  async function saveEditMember(email: string) {
+    setEditSaving(true);
+    await fetch(`/api/admin/members/${encodeURIComponent(email)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editName, phone: editPhone }),
+    });
+    setMembers((prev) => prev.map((m) => m.email === email ? { ...m, name: editName, phone: editPhone } : m));
+    setEditingEmail(null);
+    setEditSaving(false);
+  }
+
+  function handleOutreachForEvent(id: string) {
+    setOutreachEventId(id);
+    setTab("outreach");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSendOutreach(e: React.FormEvent) {
+    e.preventDefault();
+    if (!outreachEventId) { setOutreachError("Please select an event"); return; }
+    if (outreachRecipients.size === 0) { setOutreachError("Please select at least one member"); return; }
+    const recipientCount = outreachRecipients.size;
+    setOutreachLoading(true); setOutreachError(""); setOutreachSuccess("");
+    const res = await fetch("/api/admin/campaigns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventId: outreachEventId, recipients: [...outreachRecipients], message: outreachMessage }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setOutreachLoading(false);
+    if (!res.ok) { setOutreachError(data.error ?? "Failed to send"); return; }
+    const sentCount = Number(data.sentCount ?? 0);
+    if (sentCount < recipientCount) {
+      setOutreachSuccess(`Sent to ${sentCount} of ${recipientCount} selected member${recipientCount !== 1 ? "s" : ""}.`);
+    } else {
+      setOutreachSuccess(`Sent to ${sentCount} member${sentCount !== 1 ? "s" : ""}!`);
+    }
+    const ev = events.find((ev) => ev.id === outreachEventId);
+    if (ev && data.campaignId) {
+      setCampaigns((prev) => [{
+        id: data.campaignId, eventId: outreachEventId, eventTitle: ev.title,
+        eventDate: ev.date, message: outreachMessage, sentAt: new Date().toISOString(),
+        sentCount: String(sentCount), recipients: JSON.stringify([...outreachRecipients]),
+      }, ...prev]);
+    }
+    setOutreachRecipients(new Set());
+    setOutreachMessage("");
+    setTimeout(() => setOutreachSuccess(""), 4000);
+  }
+
   const tabClass = (t: Tab) =>
     `px-4 py-2 text-sm font-semibold rounded-xl transition-colors ${
       tab === t ? "bg-green-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
@@ -377,6 +656,8 @@ export default function AdminDashboard({
         <div className="flex gap-2 mb-8 flex-wrap">
           <button className={tabClass("bookings")} onClick={() => { setTab("bookings"); loadBookings(); }}>📋 Bookings</button>
           <button className={tabClass("events")} onClick={() => setTab("events")}>📅 Events</button>
+          <button className={tabClass("members")} onClick={() => setTab("members")}>👥 Members</button>
+          <button className={tabClass("outreach")} onClick={() => setTab("outreach")}>📧 Outreach</button>
           <button className={tabClass("activities")} onClick={() => setTab("activities")}>📸 Club Photos</button>
           <button className={tabClass("slider")} onClick={() => setTab("slider")}>🖼️ Slider</button>
         </div>
@@ -489,9 +770,20 @@ export default function AdminDashboard({
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
                             {isCancelled && <span className="text-xs bg-red-100 text-red-600 rounded-full px-2 py-0.5 font-semibold">Cancelled</span>}
-                            {ev.totalSlots && Number(ev.totalSlots) > 0 && (
-                              <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{ev.totalSlots} slots</span>
-                            )}
+                            {ev.totalSlots && Number(ev.totalSlots) > 0 && (() => {
+                              const total = Number(ev.totalSlots);
+                              const used = Number(ev.usedSlots ?? 0);
+                              const remaining = total - used;
+                              return (
+                                <span className={`text-xs rounded-full px-2 py-0.5 ${
+                                  remaining === 0 ? "bg-red-100 text-red-500" :
+                                  remaining <= 2 ? "bg-orange-100 text-orange-500" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>
+                                  {remaining}/{total} remaining
+                                </span>
+                              );
+                            })()}
                             {ev.blockBookings === "1" && <span className="text-xs bg-orange-50 text-orange-500 rounded-full px-2 py-0.5">🚫 Blocks slots</span>}
                           </div>
                           <p className="text-green-600 text-xs mt-0.5">
@@ -507,6 +799,14 @@ export default function AdminDashboard({
                             <>
                               <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
                               <button onClick={() => handleStartEdit(ev)} className="text-xs text-blue-500 hover:text-blue-700 font-medium">Edit</button>
+                              <button onClick={() => toggleEventRegistrants(ev.id)}
+                                className="text-xs text-purple-500 hover:text-purple-700 font-medium">
+                                {expandedEventId === ev.id ? "Hide Registrants" : "Registrants"}
+                              </button>
+                              <button onClick={() => handleOutreachForEvent(ev.id)}
+                                className="text-xs text-teal-500 hover:text-teal-700 font-medium">
+                                📧 Invite
+                              </button>
                               {featuredEventId === ev.id ? (
                                 <button onClick={handleUnpinEvent} disabled={pinLoading === "unpin"}
                                   className="text-xs text-amber-500 hover:text-amber-700 font-medium disabled:opacity-50">
@@ -531,6 +831,62 @@ export default function AdminDashboard({
                           )}
                         </div>
                       </div>
+                      {/* Registrants panel */}
+                      {expandedEventId === ev.id && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          {eventRegsLoading === ev.id ? (
+                            <p className="text-xs text-gray-400 py-2">Loading registrants…</p>
+                          ) : (eventRegs[ev.id] ?? []).length === 0 ? (
+                            <p className="text-xs text-gray-400 py-2">No registrations yet.</p>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="text-gray-400 border-b border-gray-100">
+                                    <th className="text-left py-1.5 pr-3 font-medium">Name</th>
+                                    <th className="text-left py-1.5 pr-3 font-medium">Email</th>
+                                    <th className="text-left py-1.5 pr-3 font-medium">Phone</th>
+                                    <th className="text-center py-1.5 pr-3 font-medium">Seats</th>
+                                    <th className="text-center py-1.5 pr-3 font-medium">Status</th>
+                                    <th className="py-1.5 font-medium"></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(eventRegs[ev.id] ?? []).map((r) => (
+                                    <tr key={r.id} className={`border-b border-gray-50 last:border-0 ${r.status === "cancelled" ? "opacity-40" : ""}`}>
+                                      <td className="py-1.5 pr-3 font-medium text-gray-900">{r.name}</td>
+                                      <td className="py-1.5 pr-3 text-gray-500">{r.email}</td>
+                                      <td className="py-1.5 pr-3 text-gray-400">{r.phone || "—"}</td>
+                                      <td className="py-1.5 pr-3 text-center text-gray-700">{r.seats}</td>
+                                      <td className="py-1.5 pr-3 text-center">
+                                        <span className={`px-2 py-0.5 rounded-full font-semibold ${
+                                          r.status === "confirmed" ? "bg-green-100 text-green-700" :
+                                          r.status === "cancelled" ? "bg-gray-100 text-gray-400" :
+                                          "bg-amber-100 text-amber-700"
+                                        }`}>{r.status}</span>
+                                      </td>
+                                      <td className="py-1.5 text-right">
+                                        {r.status === "pending" && (
+                                          <div className="flex gap-2 justify-end">
+                                            <button onClick={() => handleConfirmEventReg(r.id, ev.id)}
+                                              className="text-green-600 hover:text-green-800 font-semibold">Confirm</button>
+                                            <button onClick={() => handleCancelEventReg(r.id, ev.id)}
+                                              className="text-red-400 hover:text-red-600 font-semibold">Cancel</button>
+                                          </div>
+                                        )}
+                                        {r.status === "confirmed" && (
+                                          <button onClick={() => handleCancelEventReg(r.id, ev.id)}
+                                            className="text-red-400 hover:text-red-600 font-semibold">Cancel</button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {cancellingEventId === ev.id && (
                         <div className="mt-3 pt-3 border-t border-orange-100 bg-orange-50 rounded-xl p-3">
                           <p className="text-xs font-semibold text-orange-700 mb-2">Cancel this event? All confirmed registrants will be emailed.</p>
@@ -548,6 +904,219 @@ export default function AdminDashboard({
                           </div>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "members" && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">Add Member</h2>
+              <p className="text-sm text-gray-500 mb-5">Members are also added automatically whenever someone makes a booking or registers for an event.</p>
+              <form onSubmit={handleAddMember} className="space-y-4">
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full name <span className="text-red-400">*</span></label>
+                    <input type="text" value={memName} onChange={e => setMemName(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="Jane Smith" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email <span className="text-red-400">*</span></label>
+                    <input type="email" value={memEmail} onChange={e => setMemEmail(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="jane@example.com" required />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                    <input type="tel" value={memPhone} onChange={e => setMemPhone(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                      placeholder="+84 xxx xxx xxxx" />
+                  </div>
+                </div>
+                {memError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{memError}</p>}
+                {memSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{memSuccess}</p>}
+                <button type="submit" disabled={memLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                  {memLoading ? "Adding…" : "Add Member"}
+                </button>
+              </form>
+            </div>
+
+            <h2 className="text-lg font-bold text-gray-900 mb-4">All Members <span className="text-gray-400 font-normal text-base">({members.length})</span></h2>
+            {members.length === 0 ? (
+              <div className="text-center py-14 bg-white rounded-2xl border border-gray-200 text-gray-400">No members yet. They are added automatically when someone books or registers for an event.</div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-100 bg-gray-50 text-gray-400 text-xs font-medium">
+                        <th className="text-left px-4 py-3">Name</th>
+                        <th className="text-left px-4 py-3">Email</th>
+                        <th className="text-left px-4 py-3">Phone</th>
+                        <th className="text-left px-4 py-3">Source</th>
+                        <th className="text-left px-4 py-3">Joined</th>
+                        <th className="px-4 py-3"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {members.map((m) => (
+                        <tr key={m.email} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                          {editingEmail === m.email ? (
+                            <>
+                              <td className="px-4 py-2">
+                                <input value={editName} onChange={e => setEditName(e.target.value)}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                              </td>
+                              <td className="px-4 py-2 text-gray-500 text-sm">{m.email}</td>
+                              <td className="px-4 py-2">
+                                <input value={editPhone} onChange={e => setEditPhone(e.target.value)}
+                                  className="w-full border border-gray-300 rounded-lg px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                              </td>
+                              <td className="px-4 py-2">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                  m.source === "booking" ? "bg-blue-50 text-blue-600" :
+                                  m.source === "event" ? "bg-teal-50 text-teal-600" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>{m.source}</span>
+                              </td>
+                              <td className="px-4 py-2 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
+                              <td className="px-4 py-2 text-right">
+                                <div className="flex gap-2 justify-end">
+                                  <button onClick={() => saveEditMember(m.email)} disabled={editSaving}
+                                    className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg font-medium disabled:opacity-50">
+                                    {editSaving ? "Saving…" : "Save"}
+                                  </button>
+                                  <button onClick={() => setEditingEmail(null)}
+                                    className="text-xs text-gray-400 hover:text-gray-600 font-medium">Cancel</button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-4 py-3 font-medium text-gray-900">{m.name}</td>
+                              <td className="px-4 py-3 text-gray-500">{m.email}</td>
+                              <td className="px-4 py-3 text-gray-400">{m.phone || "—"}</td>
+                              <td className="px-4 py-3">
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                                  m.source === "booking" ? "bg-blue-50 text-blue-600" :
+                                  m.source === "event" ? "bg-teal-50 text-teal-600" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>{m.source}</span>
+                              </td>
+                              <td className="px-4 py-3 text-gray-400 text-xs">{new Date(m.createdAt).toLocaleDateString("en-GB")}</td>
+                              <td className="px-4 py-3 text-right">
+                                <div className="flex gap-3 justify-end">
+                                  <button onClick={() => startEditMember(m)} className="text-xs text-blue-500 hover:text-blue-700 font-medium">Edit</button>
+                                  <button onClick={() => handleDeleteMember(m.email)} className="text-xs text-red-400 hover:text-red-600 font-medium">Remove</button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "outreach" && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-1">Send Event Invitation</h2>
+              <p className="text-sm text-gray-500 mb-5">Pick an event and members to invite. Each recipient gets a personalised email with a link to register on the website.</p>
+              <form onSubmit={handleSendOutreach} className="space-y-5">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Event <span className="text-red-400">*</span></label>
+                  <select value={outreachEventId} onChange={e => setOutreachEventId(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+                    <option value="">— Select an event —</option>
+                    {events.filter(ev => ev.cancelled !== "1").map((ev) => (
+                      <option key={ev.id} value={ev.id}>{ev.title} · {formatShortDate(ev.date)}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-gray-700">Recipients <span className="text-red-400">*</span></label>
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setOutreachRecipients(new Set(members.map(m => m.email)))}
+                        className="text-xs text-green-600 hover:text-green-800 font-medium">Select all</button>
+                      <button type="button" onClick={() => setOutreachRecipients(new Set())}
+                        className="text-xs text-gray-400 hover:text-gray-600 font-medium">Clear</button>
+                    </div>
+                  </div>
+                  {members.length === 0 ? (
+                    <p className="text-sm text-gray-400 bg-gray-50 rounded-xl px-4 py-6 text-center">No members yet. Add members in the Members tab.</p>
+                  ) : (
+                    <div className="border border-gray-200 rounded-xl divide-y divide-gray-50 max-h-64 overflow-y-auto">
+                      {members.map((m) => (
+                        <label key={m.email} className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={outreachRecipients.has(m.email)}
+                            onChange={(e) => {
+                              setOutreachRecipients((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) { next.add(m.email); } else { next.delete(m.email); }
+                                return next;
+                              });
+                            }}
+                            className="w-4 h-4 accent-green-600" />
+                          <span className="flex-1 text-sm text-gray-800">{m.name}</span>
+                          <span className="text-xs text-gray-400">{m.email}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {outreachRecipients.size > 0 && (
+                    <p className="text-xs text-green-600 mt-1.5">{outreachRecipients.size} recipient{outreachRecipients.size !== 1 ? "s" : ""} selected</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Personal note <span className="text-gray-400 font-normal">(optional)</span></label>
+                  <textarea value={outreachMessage} onChange={e => setOutreachMessage(e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                    rows={3} placeholder="Add a personal note included in the invitation email…" />
+                </div>
+
+                {outreachError && <p className="text-red-500 text-sm bg-red-50 px-3 py-2 rounded-lg">{outreachError}</p>}
+                {outreachSuccess && <p className="text-green-600 text-sm bg-green-50 px-3 py-2 rounded-lg">{outreachSuccess}</p>}
+                <button type="submit" disabled={outreachLoading}
+                  className="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50">
+                  {outreachLoading ? "Sending…" : `Send Invitation${outreachRecipients.size > 0 ? ` to ${outreachRecipients.size}` : ""}`}
+                </button>
+              </form>
+            </div>
+
+            <h2 className="text-lg font-bold text-gray-900 mb-4">Campaign History <span className="text-gray-400 font-normal text-base">({campaigns.length})</span></h2>
+            {campaigns.length === 0 ? (
+              <div className="text-center py-14 bg-white rounded-2xl border border-gray-200 text-gray-400">No campaigns sent yet.</div>
+            ) : (
+              <div className="space-y-3">
+                {campaigns.map((c) => {
+                  const recipientList = parseCampaignRecipients(c.recipients);
+                  return (
+                    <div key={c.id} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="font-semibold text-gray-900 text-sm">{c.eventTitle}</p>
+                          <p className="text-green-600 text-xs mt-0.5">{formatCampaignDate(c.eventDate)}</p>
+                          {c.message && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{c.message}</p>}
+                          <p className="text-gray-400 text-xs mt-1.5">
+                            Sent to {recipientList.length} member{recipientList.length !== 1 ? "s" : ""} · {formatCampaignDate(c.sentAt, true)}
+                          </p>
+                        </div>
+                        <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">{c.sentCount} sent</span>
+                      </div>
                     </div>
                   );
                 })}

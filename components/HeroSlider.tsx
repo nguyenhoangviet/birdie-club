@@ -58,6 +58,14 @@ export function HeroSlider({ slides }: { slides: Slide[] }) {
             <p className="text-lg md:text-xl text-white/90 max-w-xl drop-shadow">
               {slide.sub}
             </p>
+            {slide.isEvent && slide.eventId && (
+              <a
+                href={`/events?register=1#${slide.eventId}`}
+                className="mt-6 inline-block bg-white text-green-800 hover:bg-green-50 font-bold text-base px-8 py-3 rounded-2xl shadow-lg transition-all hover:scale-105 active:scale-95"
+              >
+                Register for this event →
+              </a>
+            )}
           </div>
         </div>
       ))}

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 interface ClubEvent {
   id: string;
@@ -121,7 +122,7 @@ function RegistrationForm({ event, onClose }: { event: ClubEvent; onClose: () =>
   );
 }
 
-function EventCard({ event, isPast }: { event: ClubEvent; isPast: boolean }) {
+function EventCard({ event, isPast, autoOpenForm, highlighted }: { event: ClubEvent; isPast: boolean; autoOpenForm: boolean; highlighted: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const hasLongDesc = (event.description?.length ?? 0) > 140;
@@ -131,10 +132,16 @@ function EventCard({ event, isPast }: { event: ClubEvent; isPast: boolean }) {
   const isFull = totalSlots > 0 && usedSlots >= totalSlots;
   const isCancelled = event.cancelled;
 
+  useEffect(() => {
+    if (autoOpenForm && !isPast && !isCancelled && !isFull) {
+      setShowForm(true);
+    }
+  }, [autoOpenForm, isPast, isCancelled, isFull]);
+
   return (
-    <div className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md ${
+    <div id={event.id} className={`bg-white rounded-2xl border overflow-hidden shadow-sm transition-all hover:shadow-md ${
       isPast || isCancelled ? "border-gray-100 opacity-55 grayscale" : "border-gray-200"
-    }`}>
+    } ${highlighted ? "ring-2 ring-green-200 border-green-300" : ""} scroll-mt-20`}>
       {event.imageUrl && (
         <img src={event.imageUrl} alt={event.title} className="w-full h-52 object-cover" />
       )}
@@ -205,6 +212,20 @@ function EventCard({ event, isPast }: { event: ClubEvent; isPast: boolean }) {
 }
 
 export function EventsList({ upcoming, past }: { upcoming: ClubEvent[]; past: ClubEvent[] }) {
+  const searchParams = useSearchParams();
+  const [targetEventId, setTargetEventId] = useState("");
+  const shouldAutoRegister = searchParams.get("register") === "1";
+
+  useEffect(() => {
+    const syncHash = () => {
+      setTargetEventId(window.location.hash.replace(/^#/, ""));
+    };
+
+    syncHash();
+    window.addEventListener("hashchange", syncHash);
+
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
   return (
     <>
       {upcoming.length === 0 ? (
@@ -215,14 +236,30 @@ export function EventsList({ upcoming, past }: { upcoming: ClubEvent[]; past: Cl
         </div>
       ) : (
         <div className="space-y-4">
-          {upcoming.map((e) => <EventCard key={e.id} event={e} isPast={false} />)}
+          {upcoming.map((e) => (
+            <EventCard
+              key={e.id}
+              event={e}
+              isPast={false}
+              autoOpenForm={shouldAutoRegister && targetEventId === e.id}
+              highlighted={targetEventId === e.id}
+            />
+          ))}
         </div>
       )}
       {past.length > 0 && (
         <div className="mt-12">
           <h2 className="text-base font-semibold text-gray-400 uppercase tracking-wide mb-4">Past Events</h2>
           <div className="space-y-3">
-            {past.map((e) => <EventCard key={e.id} event={e} isPast={true} />)}
+            {past.map((e) => (
+              <EventCard
+                key={e.id}
+                event={e}
+                isPast={true}
+                autoOpenForm={false}
+                highlighted={targetEventId === e.id}
+              />
+            ))}
           </div>
         </div>
       )}
