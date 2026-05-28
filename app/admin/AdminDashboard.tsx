@@ -73,6 +73,41 @@ interface Campaign {
   recipients: string;
 }
 
+function normalizeMember(member: Partial<Member> | null | undefined): Member | null {
+  if (!member || typeof member !== "object" || !member.email) return null;
+
+  return {
+    id: String(member.id ?? member.email),
+    email: String(member.email),
+    name: String(member.name ?? member.email),
+    phone: member.phone ? String(member.phone) : "",
+    source: String(member.source ?? "manual"),
+    createdAt: String(member.createdAt ?? ""),
+  };
+}
+
+function normalizeEvent(event: Partial<ClubEvent> | null | undefined): ClubEvent | null {
+  if (!event || typeof event !== "object" || !event.id) return null;
+
+  return {
+    id: String(event.id),
+    title: String(event.title ?? "Untitled event"),
+    date: String(event.date ?? ""),
+    time: event.time ? String(event.time) : "",
+    startTime: event.startTime ? String(event.startTime) : "",
+    endTime: event.endTime ? String(event.endTime) : "",
+    location: event.location ? String(event.location) : "",
+    description: event.description ? String(event.description) : "",
+    imageUrl: event.imageUrl ? String(event.imageUrl) : "",
+    flickrUrl: event.flickrUrl ? String(event.flickrUrl) : "",
+    totalSlots: event.totalSlots ? String(event.totalSlots) : "0",
+    usedSlots: event.usedSlots ? String(event.usedSlots) : "0",
+    blockBookings: event.blockBookings ? String(event.blockBookings) : "",
+    cancelled: event.cancelled ? String(event.cancelled) : "",
+    cancelReason: event.cancelReason ? String(event.cancelReason) : "",
+  };
+}
+
 function parseCampaignRecipients(value?: unknown) {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string");
@@ -115,6 +150,15 @@ function formatCampaignDate(value?: string, includeTime?: boolean) {
   return includeTime
     ? date.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
     : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 type Tab = "bookings" | "events" | "activities" | "slider" | "members" | "outreach";
@@ -167,7 +211,7 @@ export default function AdminDashboard({
   }
 
   // Events state
-  const [events, setEvents] = useState<ClubEvent[]>(initialEvents);
+  const [events, setEvents] = useState<ClubEvent[]>(() => initialEvents.map(normalizeEvent).filter((event): event is ClubEvent => Boolean(event)));
   const [evTitle, setEvTitle] = useState("");
   const [evDate, setEvDate] = useState("");
   const [evStartTime, setEvStartTime] = useState("");
@@ -240,7 +284,7 @@ export default function AdminDashboard({
   const [slideSuccess, setSlideSuccess] = useState("");
 
   // Members state
-  const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [members, setMembers] = useState<Member[]>(() => initialMembers.map(normalizeMember).filter((member): member is Member => Boolean(member)));
   const [memName, setMemName] = useState("");
   const [memEmail, setMemEmail] = useState("");
   const [memPhone, setMemPhone] = useState("");
@@ -267,10 +311,21 @@ export default function AdminDashboard({
     let cancelled = false;
 
     async function refreshMembers() {
-      const res = await fetch("/api/admin/members", { cache: "no-store" });
-      const data = await res.json().catch(() => ({ members: [] }));
-      if (!cancelled && res.ok) {
-        setMembers(data.members ?? []);
+      try {
+        const res = await fetch("/api/admin/members", { cache: "no-store" });
+        const data = await res.json().catch(() => ({ members: [] }));
+        if (!cancelled && res.ok) {
+          const nextMembers = Array.isArray(data.members)
+            ? (data.members as Array<Partial<Member> | null | undefined>)
+              .map(normalizeMember)
+              .filter((member): member is Member => Boolean(member))
+            : [];
+          setMembers(nextMembers);
+        }
+      } catch {
+        if (!cancelled) {
+          setMemError("Failed to load members");
+        }
       }
     }
 
@@ -985,7 +1040,7 @@ export default function AdminDashboard({
                     className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
                     <option value="">— Select an event —</option>
                     {events.filter(ev => ev.cancelled !== "1").map((ev) => (
-                      <option key={ev.id} value={ev.id}>{ev.title} · {new Date(ev.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</option>
+                      <option key={ev.id} value={ev.id}>{ev.title} · {formatShortDate(ev.date)}</option>
                     ))}
                   </select>
                 </div>
