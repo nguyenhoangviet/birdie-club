@@ -73,8 +73,12 @@ interface Campaign {
   recipients: string;
 }
 
-function parseCampaignRecipients(value?: string) {
-  if (!value) return [] as string[];
+function parseCampaignRecipients(value?: unknown) {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string");
+  }
+
+  if (typeof value !== "string" || !value) return [] as string[];
 
   try {
     const parsed = JSON.parse(value);
@@ -85,6 +89,32 @@ function parseCampaignRecipients(value?: string) {
       .map((item) => item.trim())
       .filter(Boolean);
   }
+}
+
+function normalizeCampaign(campaign: Partial<Campaign> | null | undefined): Campaign | null {
+  if (!campaign || typeof campaign !== "object" || !campaign.id) return null;
+
+  return {
+    id: String(campaign.id),
+    eventId: String(campaign.eventId ?? ""),
+    eventTitle: String(campaign.eventTitle ?? "Untitled event"),
+    eventDate: String(campaign.eventDate ?? ""),
+    message: campaign.message ? String(campaign.message) : "",
+    sentAt: String(campaign.sentAt ?? ""),
+    sentCount: String(campaign.sentCount ?? "0"),
+    recipients: typeof campaign.recipients === "string" ? campaign.recipients : JSON.stringify(parseCampaignRecipients(campaign.recipients)),
+  };
+}
+
+function formatCampaignDate(value?: string, includeTime?: boolean) {
+  if (!value) return "Unknown date";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Unknown date";
+
+  return includeTime
+    ? date.toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
 type Tab = "bookings" | "events" | "activities" | "slider" | "members" | "outreach";
@@ -223,7 +253,7 @@ export default function AdminDashboard({
   const [editSaving, setEditSaving] = useState(false);
 
   // Outreach / Campaigns state
-  const [campaigns, setCampaigns] = useState<Campaign[]>(initialCampaigns);
+  const [campaigns, setCampaigns] = useState<Campaign[]>(() => initialCampaigns.map(normalizeCampaign).filter((campaign): campaign is Campaign => Boolean(campaign)));
   const [outreachEventId, setOutreachEventId] = useState("");
   const [outreachRecipients, setOutreachRecipients] = useState<Set<string>>(new Set());
   const [outreachMessage, setOutreachMessage] = useState("");
@@ -1024,10 +1054,10 @@ export default function AdminDashboard({
                       <div className="flex items-start justify-between gap-4">
                         <div>
                           <p className="font-semibold text-gray-900 text-sm">{c.eventTitle}</p>
-                          <p className="text-green-600 text-xs mt-0.5">{new Date(c.eventDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</p>
+                          <p className="text-green-600 text-xs mt-0.5">{formatCampaignDate(c.eventDate)}</p>
                           {c.message && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{c.message}</p>}
                           <p className="text-gray-400 text-xs mt-1.5">
-                            Sent to {recipientList.length} member{recipientList.length !== 1 ? "s" : ""} · {new Date(c.sentAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                            Sent to {recipientList.length} member{recipientList.length !== 1 ? "s" : ""} · {formatCampaignDate(c.sentAt, true)}
                           </p>
                         </div>
                         <span className="text-xs bg-green-50 text-green-600 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">{c.sentCount} sent</span>

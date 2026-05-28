@@ -46,7 +46,7 @@ export default async function AdminPage() {
   const campaignIds = (await redis.zrange("campaigns", 0, -1, { rev: true })) as string[];
   const initialCampaigns = (
     await Promise.all(campaignIds.map((id) => redis.hgetall<Record<string, string>>(`campaign:${id}`)))
-  ).filter(Boolean) as unknown as Array<Record<string, string>>;
+  ).filter((campaign) => Boolean(campaign && campaign.id)) as unknown as Array<Record<string, string>>;
 
   return (
     <AdminDashboard
