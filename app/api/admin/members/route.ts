@@ -1,35 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/session";
 import { redis } from "@/lib/redis";
-import { upsertMember } from "@/lib/members";
+import { listMembers, syncMembersFromBookings } from "@/lib/members";
 import { randomUUID } from "crypto";
 
 export async function GET() {
   const session = await getAdminSession();
   if (!session.isAdmin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Backfill: ensure every user who has ever booked appears as a member
-  const bookingKeys = (await redis.keys("userBookings:*")) as string[];
-  await Promise.all(
-    bookingKeys.map(async (key) => {
-      const email = key.replace("userBookings:", "");
-      const existing = await redis.hgetall<Record<string, string>>(`member:${email}`);
-      if (!existing || !existing.id) {
-        const [latestId] = (await redis.zrange(key, 0, 0, { rev: true })) as string[];
-        if (latestId) {
-          const booking = await redis.hgetall<Record<string, string>>(`booking:${latestId}`);
-          if (booking) {
-            await upsertMember(email, booking.name ?? "", booking.phone ?? "", "booking");
-          }
-        }
-      }
-    })
-  );
-
-  const emails = (await redis.zrange("members", 0, -1, { rev: true })) as string[];
-  const members = (
-    await Promise.all(emails.map((e) => redis.hgetall<Record<string, string>>(`member:${e}`)))
-  ).filter(Boolean) as Array<Record<string, string>>;
+  await syncMembersFromBookings();
+  const members = await listMembers();
 
   return NextResponse.json({ members });
 }

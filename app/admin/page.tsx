@@ -1,4 +1,5 @@
 import { getAdminSession } from "@/lib/session";
+import { listMembers, syncMembersFromBookings } from "@/lib/members";
 import { redirect } from "next/navigation";
 import { redis } from "@/lib/redis";
 import { DEFAULT_SLIDES } from "@/lib/slides";
@@ -39,10 +40,8 @@ export default async function AdminPage() {
   const rawEventDuration = (await redis.get("slider:eventDuration")) as string | null;
   const initialEventDuration = Number(rawEventDuration) || 8000;
 
-  const memberEmails = (await redis.zrange("members", 0, -1, { rev: true })) as string[];
-  const initialMembers = (
-    await Promise.all(memberEmails.map((e) => redis.hgetall<Record<string, string>>(`member:${e}`)))
-  ).filter(Boolean) as unknown as Array<Record<string, string>>;
+  await syncMembersFromBookings();
+  const initialMembers = (await listMembers()) as unknown as Array<Record<string, string>>;
 
   const campaignIds = (await redis.zrange("campaigns", 0, -1, { rev: true })) as string[];
   const initialCampaigns = (
