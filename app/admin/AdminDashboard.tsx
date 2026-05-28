@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -216,6 +216,26 @@ export default function AdminDashboard({
   const [outreachLoading, setOutreachLoading] = useState(false);
   const [outreachError, setOutreachError] = useState("");
   const [outreachSuccess, setOutreachSuccess] = useState("");
+
+  useEffect(() => {
+    if (tab !== "members" && tab !== "outreach") return;
+
+    let cancelled = false;
+
+    async function refreshMembers() {
+      const res = await fetch("/api/admin/members", { cache: "no-store" });
+      const data = await res.json().catch(() => ({ members: [] }));
+      if (!cancelled && res.ok) {
+        setMembers(data.members ?? []);
+      }
+    }
+
+    refreshMembers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
 
   async function handleLogout() {
     await fetch("/api/admin/logout", { method: "POST" });
