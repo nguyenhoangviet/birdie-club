@@ -18,10 +18,30 @@ interface ClubEvent {
   title: string;
   date: string;
   time?: string;
+  startTime?: string;
+  endTime?: string;
   location?: string;
   description?: string;
   imageUrl?: string;
   flickrUrl?: string;
+  totalSlots?: string;
+  blockBookings?: string;
+  cancelled?: string;
+  cancelReason?: string;
+}
+
+interface EventRegistration {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  eventDate: string;
+  eventTime?: string;
+  email: string;
+  name: string;
+  phone?: string;
+  seats: string;
+  status: string;
+  registeredAt: string;
 }
 
 interface SlideConfig {
@@ -66,9 +86,14 @@ export default function AdminDashboard({
   async function loadBookings() {
     if (bookings !== null) return;
     setBookingsLoading(true);
-    const res = await fetch("/api/admin/bookings");
-    const data = await res.json().catch(() => ({ bookings: [] }));
-    setBookings(data.bookings ?? []);
+    const [bookRes, regRes] = await Promise.all([
+      fetch("/api/admin/bookings"),
+      fetch("/api/admin/registrations"),
+    ]);
+    const bookData = await bookRes.json().catch(() => ({ bookings: [] }));
+    const regData = await regRes.json().catch(() => ({ registrations: [] }));
+    setBookings(bookData.bookings ?? []);
+    setRegistrations(regData.registrations ?? []);
     setBookingsLoading(false);
   }
 
@@ -76,14 +101,23 @@ export default function AdminDashboard({
   const [events, setEvents] = useState<ClubEvent[]>(initialEvents);
   const [evTitle, setEvTitle] = useState("");
   const [evDate, setEvDate] = useState("");
-  const [evTime, setEvTime] = useState("");
+  const [evStartTime, setEvStartTime] = useState("");
+  const [evEndTime, setEvEndTime] = useState("");
   const [evLocation, setEvLocation] = useState("");
   const [evDesc, setEvDesc] = useState("");
   const [evFlickrUrl, setEvFlickrUrl] = useState("");
+  const [evTotalSlots, setEvTotalSlots] = useState(0);
+  const [evBlockBookings, setEvBlockBookings] = useState(false);
   const [evLoading, setEvLoading] = useState(false);
   const [evError, setEvError] = useState("");
   const [evSuccess, setEvSuccess] = useState("");
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [cancellingEventId, setCancellingEventId] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelLoading, setCancelLoading] = useState(false);
+
+  // Event registrations (for Bookings tab)
+  const [registrations, setRegistrations] = useState<EventRegistration[] | null>(null);
 
   // Featured event (slider pin)
   const [featuredEventId, setFeaturedEventId] = useState<string>(initialFeaturedEventId);
@@ -139,10 +173,16 @@ export default function AdminDashboard({
     setEditingEventId(ev.id);
     setEvTitle(ev.title);
     setEvDate(ev.date);
-    setEvTime(ev.time ?? "");
+    // Parse startTime/endTime from stored fields or from time string
+    const st = ev.startTime ?? (ev.time?.split(" - ")[0] ?? "");
+    const et = ev.endTime ?? (ev.time?.split(" - ")[1] ?? "");
+    setEvStartTime(st);
+    setEvEndTime(et);
     setEvLocation(ev.location ?? "");
     setEvDesc(ev.description ?? "");
     setEvFlickrUrl(ev.flickrUrl ?? "");
+    setEvTotalSlots(Number(ev.totalSlots) || 0);
+    setEvBlockBookings(ev.blockBookings === "1");
     setEvError("");
     setEvSuccess("");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -150,7 +190,9 @@ export default function AdminDashboard({
 
   function handleCancelEdit() {
     setEditingEventId(null);
-    setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+    setEvTitle(""); setEvDate(""); setEvStartTime(""); setEvEndTime("");
+    setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+    setEvTotalSlots(0); setEvBlockBookings(false);
     setEvError(""); setEvSuccess("");
   }
 
@@ -244,17 +286,19 @@ export default function AdminDashboard({
     setEvError("");
     setEvSuccess("");
 
+    const eventBody = {
+      title: evTitle, date: evDate,
+      startTime: evStartTime, endTime: evEndTime,
+      location: evLocation, description: evDesc, flickrUrl: evFlickrUrl,
+      totalSlots: evTotalSlots, blockBookings: evBlockBookings,
+    };
+
     if (editingEventId) {
-      // --- EDIT existing event ---
       const existing = events.find((ev) => ev.id === editingEventId);
       const res = await fetch(`/api/admin/events/${editingEventId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: evTitle, date: evDate, time: evTime,
-          location: evLocation, description: evDesc, flickrUrl: evFlickrUrl,
-          existingImageUrl: existing?.imageUrl ?? "",
-        }),
+        body: JSON.stringify({ ...eventBody, existingImageUrl: existing?.imageUrl ?? "" }),
       });
       setEvLoading(false);
       if (!res.ok) {
@@ -262,25 +306,21 @@ export default function AdminDashboard({
         setEvError(data.error ?? "Failed to save");
         return;
       }
-      const updated: ClubEvent = {
-        ...existing!,
-        title: evTitle, date: evDate, time: evTime,
-        location: evLocation, description: evDesc, flickrUrl: evFlickrUrl,
-        imageUrl: evFlickrUrl ? existing?.imageUrl : existing?.imageUrl,
-      };
-      setEvents((prev) => prev.map((ev) => ev.id === editingEventId ? updated : ev));
+      const time = evStartTime && evEndTime ? `${evStartTime} - ${evEndTime}` : "";
+      setEvents((prev) => prev.map((ev) => ev.id === editingEventId
+        ? { ...ev, ...eventBody, time, startTime: evStartTime, endTime: evEndTime, totalSlots: String(evTotalSlots), blockBookings: evBlockBookings ? "1" : "0" }
+        : ev
+      ));
       setEvSuccess("Event updated!");
-      setEditingEventId(null);
-      setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+      handleCancelEdit();
       router.refresh();
       return;
     }
 
-    // --- ADD new event ---
     const res = await fetch("/api/admin/events", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: evTitle, date: evDate, time: evTime, location: evLocation, description: evDesc, flickrUrl: evFlickrUrl }),
+      body: JSON.stringify(eventBody),
     });
     setEvLoading(false);
     if (!res.ok) {
@@ -288,9 +328,23 @@ export default function AdminDashboard({
       setEvError(data.error ?? "Failed to add");
       return;
     }
-    setEvTitle(""); setEvDate(""); setEvTime(""); setEvLocation(""); setEvDesc(""); setEvFlickrUrl("");
+    handleCancelEdit();
     setEvSuccess("Event added!");
     router.refresh();
+  }
+
+  async function handleCancelEvent(id: string) {
+    setCancelLoading(true);
+    const res = await fetch(`/api/admin/events/${id}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: cancelReason }),
+    });
+    setCancelLoading(false);
+    if (!res.ok) return;
+    setEvents((prev) => prev.map((ev) => ev.id === id ? { ...ev, cancelled: "1", cancelReason } : ev));
+    setCancellingEventId(null);
+    setCancelReason("");
   }
 
   async function handleDeleteEvent(id: string) {
@@ -328,7 +382,16 @@ export default function AdminDashboard({
         </div>
 
         {tab === "bookings" && (
-          <BookingsView bookings={bookings} loading={bookingsLoading} />
+          <BookingsView bookings={bookings} loading={bookingsLoading} registrations={registrations}
+            onConfirmReg={async (regId, eventId) => {
+              await fetch(`/api/admin/events/${eventId}/registrations/${regId}`, { method: "PUT" });
+              setRegistrations((prev) => prev ? prev.map((r) => r.id === regId ? { ...r, status: "confirmed" } : r) : prev);
+            }}
+            onCancelReg={async (regId, eventId) => {
+              await fetch(`/api/admin/events/${eventId}/registrations/${regId}`, { method: "DELETE" });
+              setRegistrations((prev) => prev ? prev.map((r) => r.id === regId ? { ...r, status: "cancelled" } : r) : prev);
+            }}
+          />
         )}
 
         {tab === "events" && (
@@ -350,11 +413,17 @@ export default function AdminDashboard({
                     <input type="date" value={evDate} onChange={e => setEvDate(e.target.value)}
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" required />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                    <input type="text" value={evTime} onChange={e => setEvTime(e.target.value)}
-                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
-                      placeholder="e.g. 9:00 AM – 11:00 AM" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Start time</label>
+                      <input type="time" value={evStartTime} onChange={e => setEvStartTime(e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">End time</label>
+                      <input type="time" value={evEndTime} onChange={e => setEvEndTime(e.target.value)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                    </div>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
@@ -367,6 +436,18 @@ export default function AdminDashboard({
                     <textarea value={evDesc} onChange={e => setEvDesc(e.target.value)}
                       className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
                       rows={3} placeholder="What's this event about?" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Total slots (0 = unlimited)</label>
+                    <input type="number" min={0} value={evTotalSlots} onChange={e => setEvTotalSlots(Number(e.target.value))}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500" />
+                  </div>
+                  <div className="flex items-center gap-3 pt-5">
+                    <input type="checkbox" id="blockBookings" checked={evBlockBookings} onChange={e => setEvBlockBookings(e.target.checked)}
+                      className="w-4 h-4 accent-green-600" />
+                    <label htmlFor="blockBookings" className="text-sm font-medium text-gray-700">
+                      Block booking slots during event
+                    </label>
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">Photo (Flickr URL)</label>
@@ -398,38 +479,78 @@ export default function AdminDashboard({
               <div className="text-center py-14 bg-white rounded-2xl border border-gray-200 text-gray-400">No events yet.</div>
             ) : (
               <div className="space-y-3">
-                {[...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(ev => (
-                  <div key={ev.id} className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-start justify-between gap-4 shadow-sm">
-                    <div>
-                      <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
-                      <p className="text-green-600 text-xs mt-0.5">
-                        {new Date(ev.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
-                        {ev.time && ` · ${ev.time}`}
-                      </p>
-                      {ev.location && <p className="text-gray-400 text-xs mt-0.5">📍 {ev.location}</p>}
-                      {ev.description && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{ev.description}</p>}
+                {[...events].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map(ev => {
+                  const isCancelled = ev.cancelled === "1";
+                  const isFuture = new Date(ev.date) >= new Date(new Date().toDateString());
+                  return (
+                    <div key={ev.id} className={`bg-white rounded-xl border px-5 py-4 shadow-sm ${isCancelled ? "border-red-100 opacity-60" : "border-gray-200"}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
+                            {isCancelled && <span className="text-xs bg-red-100 text-red-600 rounded-full px-2 py-0.5 font-semibold">Cancelled</span>}
+                            {ev.totalSlots && Number(ev.totalSlots) > 0 && (
+                              <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{ev.totalSlots} slots</span>
+                            )}
+                            {ev.blockBookings === "1" && <span className="text-xs bg-orange-50 text-orange-500 rounded-full px-2 py-0.5">🚫 Blocks slots</span>}
+                          </div>
+                          <p className="text-green-600 text-xs mt-0.5">
+                            {new Date(ev.date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
+                            {ev.time && ` · ${ev.time}`}
+                          </p>
+                          {ev.location && <p className="text-gray-400 text-xs mt-0.5">📍 {ev.location}</p>}
+                          {ev.description && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{ev.description}</p>}
+                          {isCancelled && ev.cancelReason && <p className="text-red-400 text-xs mt-1">Reason: {ev.cancelReason}</p>}
+                        </div>
+                        <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
+                          {!isCancelled && (
+                            <>
+                              <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
+                              <button onClick={() => handleStartEdit(ev)} className="text-xs text-blue-500 hover:text-blue-700 font-medium">Edit</button>
+                              {featuredEventId === ev.id ? (
+                                <button onClick={handleUnpinEvent} disabled={pinLoading === "unpin"}
+                                  className="text-xs text-amber-500 hover:text-amber-700 font-medium disabled:opacity-50">
+                                  {pinLoading === "unpin" ? "…" : "📌 Unpin"}
+                                </button>
+                              ) : (
+                                <button onClick={() => handlePinEvent(ev.id)} disabled={pinLoading === ev.id}
+                                  className="text-xs text-gray-400 hover:text-green-600 font-medium disabled:opacity-50">
+                                  {pinLoading === ev.id ? "…" : "📌 Pin"}
+                                </button>
+                              )}
+                              {isFuture && (
+                                <button onClick={() => { setCancellingEventId(ev.id); setCancelReason(""); }}
+                                  className="text-xs text-orange-400 hover:text-orange-600 font-medium">
+                                  Cancel Event
+                                </button>
+                              )}
+                            </>
+                          )}
+                          {isCancelled && (
+                            <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
+                          )}
+                        </div>
+                      </div>
+                      {cancellingEventId === ev.id && (
+                        <div className="mt-3 pt-3 border-t border-orange-100 bg-orange-50 rounded-xl p-3">
+                          <p className="text-xs font-semibold text-orange-700 mb-2">Cancel this event? All confirmed registrants will be emailed.</p>
+                          <input type="text" value={cancelReason} onChange={e => setCancelReason(e.target.value)}
+                            className="w-full border border-orange-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-orange-400 mb-2 bg-white"
+                            placeholder="Reason (optional)…" />
+                          <div className="flex gap-2">
+                            <button onClick={() => handleCancelEvent(ev.id)} disabled={cancelLoading}
+                              className="bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-3 py-1.5 rounded-lg disabled:opacity-50">
+                              {cancelLoading ? "Cancelling…" : "Confirm Cancel"}
+                            </button>
+                            <button onClick={() => setCancellingEventId(null)} className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+                              Back
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium flex-shrink-0">Delete</button>
-                    <button onClick={() => handleStartEdit(ev)} className="text-xs text-blue-500 hover:text-blue-700 font-medium flex-shrink-0">Edit</button>
-                    {featuredEventId === ev.id ? (
-                      <button
-                        onClick={handleUnpinEvent}
-                        disabled={pinLoading === "unpin"}
-                        className="text-xs text-amber-500 hover:text-amber-700 font-medium flex-shrink-0 disabled:opacity-50"
-                      >
-                        {pinLoading === "unpin" ? "…" : "📌 Unpin"}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => handlePinEvent(ev.id)}
-                        disabled={pinLoading === ev.id}
-                        className="text-xs text-gray-400 hover:text-green-600 font-medium flex-shrink-0 disabled:opacity-50"
-                      >
-                        {pinLoading === ev.id ? "…" : "📌 Pin"}
-                      </button>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </>
@@ -641,9 +762,15 @@ interface Booking {
 function BookingsView({
   bookings,
   loading,
+  registrations,
+  onConfirmReg,
+  onCancelReg,
 }: {
   bookings: Booking[] | null;
   loading: boolean;
+  registrations: EventRegistration[] | null;
+  onConfirmReg: (regId: string, eventId: string) => Promise<void>;
+  onCancelReg: (regId: string, eventId: string) => Promise<void>;
 }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
@@ -829,6 +956,51 @@ function BookingsView({
           </summary>
           <div className="space-y-2 mt-2">{cancelled.map(renderBooking)}</div>
         </details>
+      )}
+
+      {/* Event Registrations */}
+      {registrations && registrations.length > 0 && (
+        <div className="mt-8">
+          <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
+            🎾 Event Registrations
+            <span className="text-sm font-normal text-gray-400">({registrations.filter(r => r.status !== "cancelled").length} active)</span>
+          </h3>
+          <div className="space-y-2">
+            {registrations.filter(r => r.status !== "cancelled").map((r) => (
+              <div key={r.id} className={`bg-white rounded-xl border px-5 py-4 ${r.status === "pending" ? "border-amber-300" : "border-gray-200"}`}>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-bold bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">EVENT</span>
+                      <p className="font-semibold text-gray-900 text-sm">{r.name}</p>
+                      {r.status === "pending" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Pending</span>}
+                      {r.status === "confirmed" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Confirmed</span>}
+                    </div>
+                    <p className="text-gray-400 text-xs truncate">{r.email}{r.phone ? ` · ${r.phone}` : ""}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      <span className="font-medium">{r.eventTitle}</span>
+                      {r.eventDate && ` · ${new Date(r.eventDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
+                      {r.eventTime && ` · ${r.eventTime}`}
+                      {` · 🎟️ ${r.seats} seat${Number(r.seats) > 1 ? "s" : ""}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {r.status === "pending" && (
+                      <button onClick={() => onConfirmReg(r.id, r.eventId)}
+                        className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+                        ✓ Confirm
+                      </button>
+                    )}
+                    <button onClick={() => onCancelReg(r.id, r.eventId)}
+                      className="text-xs font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

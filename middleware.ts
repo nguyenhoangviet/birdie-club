@@ -11,6 +11,7 @@ const PUBLIC_PATHS = [
   "/api/auth/send-otp",
   "/api/auth/verify-otp",
   "/api/admin",
+  "/api/events",
 ];
 
 export async function middleware(req: NextRequest) {

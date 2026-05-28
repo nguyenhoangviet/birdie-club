@@ -11,6 +11,9 @@ interface ClubEvent {
   location?: string;
   description?: string;
   imageUrl?: string;
+  totalSlots?: number;
+  usedSlots?: number;
+  cancelled?: boolean;
 }
 
 export default async function EventsPage() {
@@ -19,9 +22,20 @@ export default async function EventsPage() {
   const ids = (await redis.zrange("events", 0, -1)) as string[];
   const allEvents = (
     await Promise.all(
-      ids.map((id) => redis.hgetall<Record<string, string>>(`event:${id}`))
+      ids.map(async (id) => {
+        const ev = await redis.hgetall<Record<string, string>>(`event:${id}`);
+        if (!ev) return null;
+        const totalSlots = Number(ev.totalSlots) || 0;
+        const usedSlots = totalSlots > 0 ? Number((await redis.get(`eventUsedSlots:${id}`)) ?? 0) : 0;
+        return {
+          ...ev,
+          totalSlots,
+          usedSlots,
+          cancelled: ev.cancelled === "1",
+        } as ClubEvent;
+      })
     )
-  ).filter(Boolean) as unknown as ClubEvent[];
+  ).filter(Boolean) as ClubEvent[];
 
   const now = new Date();
   now.setHours(0, 0, 0, 0);
