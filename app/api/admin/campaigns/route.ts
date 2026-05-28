@@ -50,6 +50,7 @@ export async function POST(req: NextRequest) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://birdie-club-rose.vercel.app";
   const sentAt = new Date().toISOString();
   let sentCount = 0;
+  const eventTime = ev.time ?? (ev.startTime && ev.endTime ? `${ev.startTime} - ${ev.endTime}` : "");
 
   // Send emails
   await Promise.all(
@@ -63,7 +64,7 @@ export async function POST(req: NextRequest) {
           eventId,
           ev.title,
           ev.date,
-          ev.time ?? "",
+          eventTime,
           (message ?? "").trim(),
           siteUrl
         );
@@ -73,6 +74,13 @@ export async function POST(req: NextRequest) {
       }
     })
   );
+
+  if (sentCount === 0) {
+    return NextResponse.json(
+      { error: "No invitation emails were delivered. Please check email settings and try again." },
+      { status: 502 }
+    );
+  }
 
   // Save campaign record
   const id = randomUUID();
@@ -88,5 +96,5 @@ export async function POST(req: NextRequest) {
   });
   await redis.zadd("campaigns", { score: Date.now(), member: id });
 
-  return NextResponse.json({ success: true, sentCount, campaignId: id });
+  return NextResponse.json({ success: true, sentCount, campaignId: id, recipientCount: recipientEmails.length });
 }
