@@ -25,6 +25,7 @@ interface ClubEvent {
   imageUrl?: string;
   flickrUrl?: string;
   totalSlots?: string;
+  usedSlots?: string;
   blockBookings?: string;
   cancelled?: string;
   cancelReason?: string;
@@ -522,9 +523,20 @@ export default function AdminDashboard({
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
                             {isCancelled && <span className="text-xs bg-red-100 text-red-600 rounded-full px-2 py-0.5 font-semibold">Cancelled</span>}
-                            {ev.totalSlots && Number(ev.totalSlots) > 0 && (
-                              <span className="text-xs bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">{ev.totalSlots} slots</span>
-                            )}
+                            {ev.totalSlots && Number(ev.totalSlots) > 0 && (() => {
+                              const total = Number(ev.totalSlots);
+                              const used = Number(ev.usedSlots ?? 0);
+                              const remaining = total - used;
+                              return (
+                                <span className={`text-xs rounded-full px-2 py-0.5 ${
+                                  remaining === 0 ? "bg-red-100 text-red-500" :
+                                  remaining <= 2 ? "bg-orange-100 text-orange-500" :
+                                  "bg-gray-100 text-gray-500"
+                                }`}>
+                                  {remaining}/{total} remaining
+                                </span>
+                              );
+                            })()}
                             {ev.blockBookings === "1" && <span className="text-xs bg-orange-50 text-orange-500 rounded-full px-2 py-0.5">🚫 Blocks slots</span>}
                           </div>
                           <p className="text-green-600 text-xs mt-0.5">

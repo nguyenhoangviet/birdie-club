@@ -18,7 +18,13 @@ export default async function AdminPage() {
   const eventIds = (await redis.zrange("events", 0, -1)) as string[];
   const events = (
     await Promise.all(
-      eventIds.map((id) => redis.hgetall<Record<string, string>>(`event:${id}`))
+      eventIds.map(async (id) => {
+        const ev = await redis.hgetall<Record<string, string>>(`event:${id}`);
+        if (!ev) return null;
+        const totalSlots = Number(ev.totalSlots) || 0;
+        const usedSlots = totalSlots > 0 ? Number((await redis.get(`eventUsedSlots:${id}`)) ?? 0) : 0;
+        return { ...ev, usedSlots: String(usedSlots) };
+      })
     )
   ).filter(Boolean) as unknown as Array<Record<string, string>>;
 
