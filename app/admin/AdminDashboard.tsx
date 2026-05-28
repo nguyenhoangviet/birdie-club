@@ -73,6 +73,20 @@ interface Campaign {
   recipients: string;
 }
 
+function parseCampaignRecipients(value?: string) {
+  if (!value) return [] as string[];
+
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+}
+
 type Tab = "bookings" | "events" | "activities" | "slider" | "members" | "outreach";
 
 export default function AdminDashboard({
@@ -1004,7 +1018,7 @@ export default function AdminDashboard({
             ) : (
               <div className="space-y-3">
                 {campaigns.map((c) => {
-                  const recipientList: string[] = JSON.parse(c.recipients ?? "[]");
+                  const recipientList = parseCampaignRecipients(c.recipients);
                   return (
                     <div key={c.id} className="bg-white rounded-xl border border-gray-200 px-5 py-4 shadow-sm">
                       <div className="flex items-start justify-between gap-4">
