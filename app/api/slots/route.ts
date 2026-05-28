@@ -60,18 +60,21 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const slots = pairs.map(({ date, hour }, idx) => {
+  const slots = await Promise.all(pairs.map(async ({ date, hour }, idx) => {
     const bookingId = bookingIds[idx];
-    const isEventBlocked = !!eventBlocks[idx];
-    let status: "available" | "mine" | "booked" | "past" | "lunch";
+    const eventBlockId = eventBlocks[idx] as string | null;
+    const isEventBlocked = !!eventBlockId;
+    let status: "available" | "mine" | "booked" | "event" | "past" | "lunch";
     let outBookingId: string | undefined;
+    let outEventTitle: string | undefined;
 
     if (isPastSlot(date, hour)) {
       status = "past";
     } else if (LUNCH_HOURS.includes(hour)) {
       status = "lunch";
     } else if (isEventBlocked) {
-      status = "booked";
+      status = "event";
+      outEventTitle = eventBlockId ? (await redis.hget<string>(`event:${eventBlockId}`, "title")) ?? "Club Event" : "Club Event";
     } else if (bookingId && bookingMap[bookingId]) {
       const b = bookingMap[bookingId];
       if (b.email === session.email) {
@@ -84,8 +87,8 @@ export async function GET(req: NextRequest) {
       status = "available";
     }
 
-    return { date, hour, status, bookingId: outBookingId };
-  });
+    return { date, hour, status, bookingId: outBookingId, eventTitle: outEventTitle };
+  }));
 
   return NextResponse.json({ slots });
 }

@@ -3,13 +3,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { SLOT_HOURS, LUNCH_HOURS, formatHour, formatSlotRange, isPastSlot } from "@/lib/slots";
 
-type SlotStatus = "available" | "mine" | "booked" | "past" | "lunch";
+type SlotStatus = "available" | "mine" | "booked" | "event" | "past" | "lunch";
 
 type Slot = {
   date: string;
   hour: number;
   status: SlotStatus;
   bookingId?: string;
+  eventTitle?: string;
 };
 
 type Modal =
@@ -70,6 +71,7 @@ const STATUS_CLASSES: Record<SlotStatus, string> = {
     "bg-green-100 hover:bg-green-200 text-green-800 border border-green-200 cursor-pointer",
   mine: "bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 cursor-pointer",
   booked: "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed",
+  event: "bg-teal-100 text-teal-700 border border-teal-200 cursor-not-allowed",
   past: "bg-white text-gray-300 border border-gray-100 cursor-not-allowed",
   lunch: "bg-amber-50 text-amber-400 border border-amber-100 cursor-not-allowed",
 };
@@ -78,6 +80,7 @@ const STATUS_LABELS: Record<SlotStatus, string> = {
   available: "Available",
   mine: "My Session",
   booked: "Taken",
+  event: "Event",
   past: "–",
   lunch: "Lunch",
 };
@@ -86,6 +89,7 @@ const STATUS_LABELS_COMPACT: Record<SlotStatus, string> = {
   available: "Open",
   mine: "Mine",
   booked: "Full",
+  event: "Event",
   past: "–",
   lunch: "Lunch",
 };
@@ -146,7 +150,7 @@ export function WeekCalendar() {
 
   function handleCellClick(date: string, hour: number) {
     const status = getEffectiveStatus(date, hour);
-    if (status === "past" || status === "booked" || status === "lunch") return;
+    if (status === "past" || status === "booked" || status === "event" || status === "lunch") return;
     setActionError("");
     const slot = getSlot(date, hour);
     if (status === "available") {
@@ -225,10 +229,10 @@ export function WeekCalendar() {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-4 mb-4">
-        {(["available", "mine", "booked", "lunch"] as SlotStatus[]).map((s) => (
+        {(["available", "mine", "booked", "event", "lunch"] as SlotStatus[]).map((s) => (
           <span key={s} className="flex items-center gap-1.5 text-xs text-gray-600">
             <span className={`w-3 h-3 rounded border inline-block ${STATUS_CLASSES[s].split(" ").slice(0, 2).join(" ")}`} />
-            {s === "available" ? "Available" : s === "mine" ? "My session" : s === "booked" ? "Taken" : "Lunch break"}
+            {s === "available" ? "Available" : s === "mine" ? "My session" : s === "booked" ? "Taken" : s === "event" ? "Event" : "Lunch break"}
           </span>
         ))}
       </div>
@@ -283,14 +287,18 @@ export function WeekCalendar() {
                   </td>
                   {days.map((date) => {
                     const status = getEffectiveStatus(date, hour);
-                    const disabled = status === "booked" || status === "past" || status === "lunch";
+                    const slot = getSlot(date, hour);
+                    const disabled = status === "booked" || status === "event" || status === "past" || status === "lunch";
+                    const tooltipTitle = status === "event"
+                      ? `Sorry, we're busy for an event: ${slot?.eventTitle ?? "Club Event"}`
+                      : disabled ? undefined : formatSlotRange(hour);
                     return (
                       <td key={date} className="p-0.5 sm:p-1">
                         <button
                           className={`w-full h-8 sm:h-9 rounded-lg text-xs font-medium transition-all ${STATUS_CLASSES[status]}`}
                           disabled={disabled}
                           onClick={() => handleCellClick(date, hour)}
-                          title={disabled ? undefined : formatSlotRange(hour)}
+                          title={tooltipTitle}
                         >
                           {labels[status]}
                         </button>
