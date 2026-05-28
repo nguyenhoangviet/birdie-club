@@ -1486,13 +1486,59 @@ function BookingsView({
     );
   }
 
-  // Group active bookings by date
-  const grouped: Record<string, Booking[]> = {};
+  // Merge active bookings and active registrations into a unified timeline grouped by date
+  type TimelineEntry = { kind: "booking"; b: Booking } | { kind: "reg"; r: EventRegistration };
+
+  function getMinutes(timeStr?: string) {
+    if (!timeStr) return 0;
+    const m = timeStr.match(/(\d{1,2}):(\d{2})/);
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
+  }
+
+  const grouped: Record<string, TimelineEntry[]> = {};
   for (const b of active) {
     if (!grouped[b.date]) grouped[b.date] = [];
-    grouped[b.date].push(b);
+    grouped[b.date].push({ kind: "booking", b });
+  }
+  for (const r of (registrations ?? []).filter((r) => r.status !== "cancelled")) {
+    const date = r.eventDate ? r.eventDate.split("T")[0] : "";
+    if (!date) continue;
+    if (!grouped[date]) grouped[date] = [];
+    grouped[date].push({ kind: "reg", r });
   }
   const sortedDates = Object.keys(grouped).sort();
+
+  function renderReg(r: EventRegistration) {
+    return (
+      <div key={r.id} className={`bg-white rounded-xl border px-5 py-4 ${r.status === "pending" ? "border-amber-300 shadow-sm" : "border-gray-200"}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+          <span className="font-bold text-sm shrink-0 w-32 text-green-700">{r.eventTime ?? "—"}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">EVENT</span>
+              <p className="font-semibold text-gray-900 text-sm">{r.name}</p>
+              {r.status === "pending" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Pending</span>}
+              {r.status === "confirmed" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Confirmed</span>}
+            </div>
+            <p className="text-gray-400 text-xs truncate">{r.email}{r.phone ? ` · ${r.phone}` : ""}</p>
+            <p className="text-gray-500 text-xs mt-0.5 font-medium">{r.eventTitle} · 🎟️ {r.seats} seat{Number(r.seats) > 1 ? "s" : ""}</p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {r.status === "pending" && (
+              <button onClick={() => onConfirmReg(r.id, r.eventId)}
+                className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors">
+                ✓ Confirm
+              </button>
+            )}
+            <button onClick={() => onCancelReg(r.id, r.eventId)}
+              className="text-xs font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -1512,8 +1558,12 @@ function BookingsView({
           </h3>
           <div className="space-y-2">
             {grouped[date]
-              .sort((a, b) => Number(a.hour) - Number(b.hour))
-              .map(renderBooking)}
+              .sort((a, b) => {
+                const aMin = a.kind === "booking" ? Number(a.b.hour) * 60 : getMinutes(a.r.eventTime);
+                const bMin = b.kind === "booking" ? Number(b.b.hour) * 60 : getMinutes(b.r.eventTime);
+                return aMin - bMin;
+              })
+              .map((entry) => entry.kind === "booking" ? renderBooking(entry.b) : renderReg(entry.r))}
           </div>
         </div>
       ))}
@@ -1525,51 +1575,6 @@ function BookingsView({
           </summary>
           <div className="space-y-2 mt-2">{cancelled.map(renderBooking)}</div>
         </details>
-      )}
-
-      {/* Event Registrations */}
-      {registrations && registrations.length > 0 && (
-        <div className="mt-8">
-          <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center gap-2">
-            🎾 Event Registrations
-            <span className="text-sm font-normal text-gray-400">({registrations.filter(r => r.status !== "cancelled").length} active)</span>
-          </h3>
-          <div className="space-y-2">
-            {registrations.filter(r => r.status !== "cancelled").map((r) => (
-              <div key={r.id} className={`bg-white rounded-xl border px-5 py-4 ${r.status === "pending" ? "border-amber-300" : "border-gray-200"}`}>
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs font-bold bg-purple-100 text-purple-700 rounded-full px-2 py-0.5">EVENT</span>
-                      <p className="font-semibold text-gray-900 text-sm">{r.name}</p>
-                      {r.status === "pending" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">⏳ Pending</span>}
-                      {r.status === "confirmed" && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ Confirmed</span>}
-                    </div>
-                    <p className="text-gray-400 text-xs truncate">{r.email}{r.phone ? ` · ${r.phone}` : ""}</p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      <span className="font-medium">{r.eventTitle}</span>
-                      {r.eventDate && ` · ${new Date(r.eventDate).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`}
-                      {r.eventTime && ` · ${r.eventTime}`}
-                      {` · 🎟️ ${r.seats} seat${Number(r.seats) > 1 ? "s" : ""}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {r.status === "pending" && (
-                      <button onClick={() => onConfirmReg(r.id, r.eventId)}
-                        className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors">
-                        ✓ Confirm
-                      </button>
-                    )}
-                    <button onClick={() => onCancelReg(r.id, r.eventId)}
-                      className="text-xs font-semibold text-red-500 hover:text-red-700 border border-red-200 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
     </div>
   );
