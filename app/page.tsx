@@ -29,15 +29,21 @@ export default async function Home() {
   if (featuredId) {
     const ev = await redis.hgetall<Record<string, string>>(`event:${featuredId}`);
     if (ev && ev.title) {
-      featuredSlides.push({
-        title: ev.title,
-        sub: [ev.time, ev.location].filter(Boolean).join(" · "),
-        imageUrl: ev.imageUrl ? ev.imageUrl.replace(/_z\.(jpg|jpeg|png)$/i, "_b.$1") : "",
-        gradient: "from-green-900 via-green-800 to-teal-900",
-        isEvent: true,
-        eventId: featuredId,
-        duration: eventDuration,
-      });
+      // Auto-remove if event date has passed (remove 1 day after the event)
+      const todayStr = new Date().toISOString().split("T")[0];
+      if (ev.date && todayStr > ev.date) {
+        redis.del("slider:featured").catch(() => {});
+      } else {
+        featuredSlides.push({
+          title: ev.title,
+          sub: [ev.time, ev.location].filter(Boolean).join(" · "),
+          imageUrl: ev.imageUrl ? ev.imageUrl.replace(/_z\.(jpg|jpeg|png)$/i, "_b.$1") : "",
+          gradient: "from-green-900 via-green-800 to-teal-900",
+          isEvent: true,
+          eventId: featuredId,
+          duration: eventDuration,
+        });
+      }
     }
   }
 

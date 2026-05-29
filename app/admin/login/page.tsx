@@ -19,10 +19,11 @@ export default function AdminLoginPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password }),
     });
-    setLoading(false);
     if (res.ok) {
+      // Keep loading state until navigation completes — avoids the green flash
       router.push("/admin");
     } else {
+      setLoading(false);
       setError("Incorrect password. Please try again.");
     }
   }

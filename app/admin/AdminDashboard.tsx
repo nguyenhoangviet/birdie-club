@@ -764,8 +764,8 @@ export default function AdminDashboard({
                   const isCancelled = ev.cancelled === "1";
                   const isFuture = new Date(ev.date) >= new Date(new Date().toDateString());
                   return (
-                    <div key={ev.id} className={`bg-white rounded-xl border px-5 py-4 shadow-sm ${isCancelled ? "border-red-100 opacity-60" : "border-gray-200"}`}>
-                      <div className="flex items-start justify-between gap-4">
+                    <div key={ev.id} className={`bg-white rounded-xl border px-4 py-4 shadow-sm ${isCancelled ? "border-red-100 opacity-60" : "border-gray-200"}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-semibold text-gray-900 text-sm">{ev.title}</p>
@@ -794,7 +794,7 @@ export default function AdminDashboard({
                           {ev.description && <p className="text-gray-500 text-xs mt-1 line-clamp-1">{ev.description}</p>}
                           {isCancelled && ev.cancelReason && <p className="text-red-400 text-xs mt-1">Reason: {ev.cancelReason}</p>}
                         </div>
-                        <div className="flex items-center gap-3 flex-shrink-0 flex-wrap justify-end">
+                        <div className="flex items-center gap-3 flex-wrap sm:flex-shrink-0 sm:justify-end">
                           {!isCancelled && (
                             <>
                               <button onClick={() => handleDeleteEvent(ev.id)} className="text-xs text-red-400 hover:text-red-600 font-medium">Delete</button>
